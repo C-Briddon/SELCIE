@@ -78,8 +78,8 @@ def solve_torus_3D(n, alpha, ps):
     s = Field_Solver("Torus_3D", alpha = alpha, n = n, density_profile = p)
     #s.picard('gmres', 'jacobi')
     t0 = default_timer()
-    #s.picard('cg', 'jacobi')
-    s.newton('bicgstab', 'ilu')
+    s.picard('cg', 'jacobi')
+    #s.newton('bicgstab', 'ilu')
     t1 = default_timer()
     print(t1-t0)
     
@@ -110,7 +110,7 @@ def solve_torus_3D(n, alpha, ps):
     
     Newton_M:
         'bicgstab', 'icc' :     56.89       x
-        'bicgstab', 'ilu' :     56.85       
+        'bicgstab', 'ilu' :     56.85       x
         'bicgstab', 'sor' :     57.35       
         'cg', 'jacobi' :        56.42       
         'default', 'sor' :      57.28       
@@ -175,18 +175,6 @@ def compare_path(s2D, s3D, angle1, angle2):
     return None
 
 
-# Set model parameters.
-n = 1 #3
-alpha = 1e18 # 1.0e12
-ps = 1e17
-
-s_2D = solve_torus_2D(n, alpha, ps)
-s_3D = solve_torus_3D(n, alpha, ps)
-
-
-check_axis_sym(s_3D, r = 0.1, y = 0.4)
-compare_path(s_2D, s_3D, angle1 = np.pi/2, angle2 = 0.5)
-
 def plot_error_slice(s2D, s3D, angle = 0.0):
     # Plot 3D slice as 2D plot.
     field3D_slice2D = d.Function(s2D.V)
@@ -205,6 +193,30 @@ def plot_error_slice(s2D, s3D, angle = 0.0):
     fig.colorbar(img)
     
     return None
+
+
+def plot_max_error(s2D, s3D, N = 1):
+    # Plot maximum error for all slices.
+    field3D_slice2D = d.Function(s2D.V)
+    v2d = d.vertex_to_dof_map(s2D.V)
+    P = s_2D.mesh.coordinates()
+    
+    dr = 0.04
+    for i, p in enumerate(P):
+        diff = np.zeros(N)
+        if np.linalg.norm(p) < 1 + dr:
+            
+            for j, angle in enumerate(np.linspace(0, 2*np.pi, N, endpoint = False)):
+                diff[j] = s3D.field(p[0]*np.cos(angle), p[1], p[0]*np.sin(angle)) - s2D.field(p)
+            
+            field3D_slice2D.vector()[v2d[i]] = max(abs(diff))#/s2D.field(p)
+    
+    fig = plt.figure()
+    img = d.plot(field3D_slice2D)
+    fig.colorbar(img)
+    
+    return None
+
 
 def plot_Res_slice(s2D, s3D, angle = 0.0):
     # Plot 3D slice as 2D plot.
@@ -228,8 +240,22 @@ def plot_Res_slice(s2D, s3D, angle = 0.0):
     
     return None
 
+
+# Set model parameters.
+n = 3
+alpha = 1e18
+ps = 1e17
+
+s_2D = solve_torus_2D(n, alpha, ps)
+s_3D = solve_torus_3D(n, alpha, ps)
+
+
+check_axis_sym(s_3D, r = 0.1, y = 0.4)
+compare_path(s_2D, s_3D, angle1 = np.pi/2, angle2 = 0.5)
+plot_error_slice(s_2D, s_3D, angle = 0.1)
+plot_max_error(s_2D, s_3D, N = 4)
+
+
+
 #s_3D.calc_field_residual()
-
-#plot_error_slice(s_2D, s_3D, angle = 0.1)
-
 #plot_Res_slice(s_2D, s_3D, angle = 0.1)

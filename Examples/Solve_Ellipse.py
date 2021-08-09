@@ -50,7 +50,7 @@ mesh, subdomains, boundaries = MT.msh_2_xdmf(filename, dim=2)
 
 # Set model parameters.
 n = 1
-alpha = 1e18
+alpha = 1e6
 ps = 1e17
 
 
@@ -81,17 +81,13 @@ Xi = np.linspace(Xi0, XiMax, 1000)
 
 calculated_field_ellipse = []
 
-Eta = np.linspace(0, 1, 3)
-#Eta = [0.1]
+Eta = np.linspace(0, 1, 5)
 
 for eta in Eta:
     calculated_field_ellipse.append([])
     
     x = a*np.sqrt((Xi**2 - 1)*(1 - eta**2))
     z = a*eta*Xi
-    
-    #x = np.linspace(0, 1, 1000)
-    #z = np.zeros(1000)
     
     for x_i, z_i in zip(x, z):
         calculated_field_ellipse[-1].append(s.field(z_i, x_i))
