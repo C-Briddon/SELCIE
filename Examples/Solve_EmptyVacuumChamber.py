@@ -17,27 +17,25 @@ import sys
 sys.path.append("..")
 from Main.Meshing_Tools import Meshing_Tools
 from Main.Solver_Chameleon import Field_Solver
-from Main.Density_Profiles import vacuum_chamber_density_profile
+from Main.Density_Profiles import Density_Profile
+
+from Density_profiles import source_wall, vacuum
 
 # Import mesh and convert from .msh to .xdmf.
-MT = Meshing_Tools()
+MT = Meshing_Tools(Dimension=2)
 filename = "../Saved Meshes/Circle_Empty_Vacuum_chamber"
-mesh, subdomains, boundaries = MT.msh_2_xdmf(filename, dim=2)
+mesh, subdomains, boundaries = MT.msh_2_xdmf(filename)
 
 
 # Set model parameters.
 n = 1
 alpha = [1e6, 1e12, 1e18]
-pw = 1e17
 
 
 # Define the density profile of the mesh using its subdomains.
-p = vacuum_chamber_density_profile(mesh = mesh, subdomain_markers = subdomains, 
-                                   source_density = 1,
-                                   vacuum_density = 1, 
-                                   wall_density = pw, 
-                                   mesh_symmetry = 'vertical axis-symmetry', 
-                                   degree = 0)
+p = Density_Profile(mesh=mesh, subdomain_markers=subdomains,
+                    mesh_symmetry='vertical axis-symmetry',
+                    profiles=[vacuum, source_wall], degree=0)
 
 
 # Plot rescaled field for range of alpha values.
@@ -48,31 +46,31 @@ phi_0 = []
 lbs = ['r-', 'k--', 'c.']
 
 plt.figure()
-plt.ylabel("$\hat{\phi}$")
-plt.xlabel("$\hat{r}$")
+plt.ylabel(r"$\hat{\phi}$")
+plt.xlabel(r"$\hat{r}$")
 
 for i, a in enumerate(alpha):
     # Setup problem.
-    s = Field_Solver("name", alpha = a, n = n, density_profile = p)
-    
-    
+    s = Field_Solver(alpha=a, n=n, density_profile=p)
+
     # Set tolerance on field solutions and solve for above problems.
     s.tol_du = 1e-10
     s.picard()
-    
-    
-    for t in np.linspace(0, 2*np.pi, 100, endpoint = False):
-        dr = dx*np.array([np.cos(t),np.sin(t)])
-        
-        calculated_field = s.probe_function(function = s.field, gradient_vector = dr, 
-                                            radial_limit = R_max)
-        
+
+    for t in np.linspace(0, 2*np.pi, 100, endpoint=False):
+        dr = dx*np.array([np.cos(t), np.sin(t)])
+
+        calculated_field = s.probe_function(function=s.field,
+                                            gradient_vector=dr,
+                                            radial_limit=R_max)
+
         X = np.array([i*dx for i, _ in enumerate(calculated_field)])
         rescaled_field = pow(s.alpha, 1/(s.n+2))*calculated_field
-        
-        plt.plot(X, rescaled_field, lbs[i], label = r"$\alpha $ = {:e}".format(a),
-                 linewidth = 1, markersize = 3)
-    
+
+        plt.plot(X, rescaled_field, lbs[i],
+                 label=r"$\alpha $ = {:e}".format(a),
+                 linewidth=1, markersize=3)
+
     phi_0.append(pow(s.alpha, 1/(s.n+2))*s.field(0.0, 0.0))
 
 

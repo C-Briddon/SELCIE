@@ -25,24 +25,16 @@ wt = 0.1
 gmsh.initialize()
 gmsh.option.setNumber('General.Verbosity', 1)
 
-MT = Meshing_Tools()
-MT.vacuum = MT.create_disk(rx = r, ry = r)
-MT.inner_wall_boundary = geom.getEntities(dim = 1)
+MT = Meshing_Tools(Dimension=2)
 
+MT.create_background_mesh(CellSizeMin=1e-3, CellSizeMax=0.01, DistMax=1.0,
+                          background_radius=r, wall_thickness=wt)
+MT.generate_mesh()
 
-MT.wall, _ = geom.cut(objectDimTags = MT.create_disk(rx = r + wt, ry = r + wt), 
-                      toolDimTags = MT.vacuum, removeObject = True, removeTool = False)
-
-MT.outer_wall_boundary = [b for b in geom.getEntities(dim = 1)
-                          if b not in MT.inner_wall_boundary]
-
-geom.synchronize()
-MT.generate_mesh_2D(SizeMin = 1e-3, SizeMax = 0.01, DistMax = 1)
 
 # After saving the mesh view it and then clear and close gmsh.
 filename = "../Saved Meshes/Circle_Empty_Vacuum_chamber"
-gmsh.write(fileName = filename + ".msh")
-
+gmsh.write(fileName=filename+".msh")
 
 gmsh.fltk.run()
 gmsh.clear()

@@ -27,16 +27,20 @@ r_v = 1.0
 gmsh.initialize()
 gmsh.option.setNumber('General.Verbosity', 1)
 
-MT = Meshing_Tools()
-MT.create_disk(rx = a*Xi, ry = a*np.sqrt(Xi**2 - 1))
+MT = Meshing_Tools(Dimension=2)
 
-MT.construct_vacuum_chamber_2D(vacuum_radius = r_v, wall_thickness = 0.1)
-MT.generate_mesh_2D(SizeMin = 5e-5, SizeMax = 0.05, DistMax = 0.4, 
-                    NumPointsPerCurve = 5000)
+MT.create_disk(rx=a*Xi, ry=a*np.sqrt(Xi**2 - 1))
+MT.create_subdomain(CellSizeMin=5e-5, CellSizeMax=0.05, DistMax=0.4,
+                    NumPointsPerCurve=10000)
+
+MT.create_background_mesh(CellSizeMin=5e-3, CellSizeMax=0.05, DistMax=0.4,
+                          background_radius=r_v, wall_thickness=0.1)
+MT.generate_mesh()
+
 
 # After saving the mesh view it and then clear and close gmsh.
-filename = "../Saved Meshes/Ellipse_in_Vacuum_r%f_Xi%f" %(r0, Xi)
-gmsh.write(fileName = filename + ".msh")
+filename = "../Saved Meshes/Ellipse_in_Vacuum_r%f_Xi%f" % (r0, Xi)
+gmsh.write(fileName=filename+".msh")
 
 gmsh.fltk.run()
 gmsh.clear()

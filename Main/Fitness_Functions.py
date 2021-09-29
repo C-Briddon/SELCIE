@@ -15,15 +15,16 @@ from deap import gp
 from Meshing_Tools import Meshing_Tools
 MT = Meshing_Tools()
 
+
 def evalSimularity(TargetShapeFunction):
     def wrapper(individual, pset):
         'Create target shape.'
         ts = TargetShapeFunction()
-        
+
         'Compare with shape from indivigual tree.'
         run = gp.compile(individual, pset)
         mass = MT.shape_similarity(ts, run)
-        
+
         'Clear GMSH of target and generated shapes.'
         gmsh.clear()
         return mass,
