@@ -10,15 +10,15 @@ Environment - fenics2019
 Solve the chameleon field around an ellipse and compare to the approximate
 analytic solution.
 """
+import dolfin as d
 import numpy as np
 import matplotlib.pyplot as plt
-from Density_profiles import source_wall, vacuum
 
 import sys
 sys.path.append("..")
-from Main.Meshing_Tools import Meshing_Tools
-from Main.Solver_Chameleon import Field_Solver
-from Main.Density_Profiles import Density_Profile
+from Main.MeshingTools import MeshingTools
+from Main.SolverChameleon import FieldSolver
+from Main.DensityProfiles import DensityProfile
 
 
 # Legendre functions of the first and second kind.
@@ -41,29 +41,37 @@ def solution_ellipse(Xi0, Xi, eta, alpha, n):
     return phi
 
 
+# Define density profile functions.
+def source_wall(x):
+    return 1.0e17
+
+
+def vacuum(x):
+    return 1.0
+
+
 # Import mesh and convert from .msh to .xdmf.
 Xi0 = 1.01
 r0 = 0.005
 a = r0/((Xi0*(Xi0**2 - 1))**(1/3))
-MT = Meshing_Tools(Dimension=2)
+
 filename = "../Saved Meshes/Ellipse_in_Vacuum_r%f_Xi%f" % (r0, Xi0)
-mesh, subdomains, boundaries = MT.msh_2_xdmf(filename)
 
 
 # Define the density profile of the mesh using its subdomains.
-p = Density_Profile(mesh=mesh, subdomain_markers=subdomains,
-                    mesh_symmetry='horizontal axis-symmetry',
-                    profiles=[source_wall, vacuum, source_wall], degree=0)
+p = DensityProfile(filename=filename, dimension=2,
+                   symmetry='horizontal axis-symmetry',
+                   profiles=[source_wall, vacuum, source_wall], degree=0)
 
 
 # Setup problem.
 alpha = 1.0e3
 n = 1
-s = Field_Solver(alpha, n, density_profile=p)
+s = FieldSolver(alpha, n, density_profile=p)
 
 # Set tolerance on field solutions and solve for above problems.
-s.tol_du = 1.0e-14
 s.picard()
+s.plot_results(field_scale='linear')
 
 
 # Plot calculated value against the analytic solution and measure difference.

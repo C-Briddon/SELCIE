@@ -12,17 +12,11 @@ Meshing_Tools functions to construct shapes.
 """
 import sys
 import gmsh
-
-
 sys.path.append("..")
-from Main.Meshing_Tools import Meshing_Tools
-MT = Meshing_Tools(Dimension=2)
+from Main.MeshingTools import MeshingTools
 
-
-# Create the mesh in gmsh.
-gmsh.initialize()
-gmsh.option.setNumber('General.Verbosity', 1)
-
+# Construct mesh.
+MT = MeshingTools(dimension=2)
 
 s1 = MT.create_rectangle(dx=0.8, dy=0.2)
 s1 = MT.rotate_z(s1, rot_fraction=0.05)

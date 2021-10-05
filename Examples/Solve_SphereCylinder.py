@@ -5,8 +5,6 @@ Created on Mon Jun  7 09:25:00 2021
 
 @author: ppycb3
 
-Environment - fenics2019
-
 Example demenstrating how to solve for the field profile for a sphere and
 infinitly long cylinder by using the 2D mesh of a circular source inside
 a vacuum. These calculated solutions are then compared to the approximate
@@ -16,13 +14,12 @@ import numpy as np
 import dolfin as d
 from scipy.special import kn
 import matplotlib.pyplot as plt
-from Density_profiles import source_wall, vacuum
 
 import sys
 sys.path.append("..")
-from Main.Meshing_Tools import Meshing_Tools
-from Main.Solver_Chameleon import Field_Solver
-from Main.Density_Profiles import Density_Profile
+from Main.MeshingTools import MeshingTools
+from Main.SolverChameleon import FieldSolver
+from Main.DensityProfiles import DensityProfile
 
 
 # Analytic solutions.
@@ -59,34 +56,39 @@ def solution_cylinder(alpha, n, source_density, R, r):
     return np.array(sol)
 
 
+# Define density profile functions.
+def source_wall(x):
+    return 1.0e17
+
+
+def vacuum(x):
+    return 1.0
+
+
 # Import mesh and convert from .msh to .xdmf.
 R = 0.005
-MT = Meshing_Tools(Dimension=2)
+MT = MeshingTools(dimension=2)
 filename = "../Saved Meshes/Circle_in_Vacuum_r" + str(R)
-mesh, subdomains, boundaries = MT.msh_2_xdmf(filename)
 
 
 # Set model parameters.
 n = 1
 alpha = 0.1
-ps = 1e17
 
 
 # Define the density profile of the mesh using its subdomains.
-p_sphere = Density_Profile(mesh=mesh, subdomain_markers=subdomains,
-                           mesh_symmetry='vertical axis-symmetry',
-                           profiles=[source_wall, vacuum, source_wall],
-                           degree=0)
+p_sphere = DensityProfile(filename=filename,
+                          dimension=2, symmetry='vertical axis-symmetry',
+                          profiles=[source_wall, vacuum, vacuum], degree=0)
 
-p_cylinder = Density_Profile(mesh=mesh, subdomain_markers=subdomains,
-                             mesh_symmetry='cylinder slice',
-                             profiles=[source_wall, vacuum, source_wall],
-                             degree=0)
+p_cylinder = DensityProfile(filename=filename,
+                            dimension=2, symmetry='cylinder slice',
+                            profiles=[source_wall, vacuum, vacuum], degree=0)
 
 
 # Setup problem.
-s_sphere = Field_Solver(alpha, n, density_profile=p_sphere)
-s_cylinder = Field_Solver(alpha, n, density_profile=p_cylinder)
+s_sphere = FieldSolver(alpha, n, density_profile=p_sphere)
+s_cylinder = FieldSolver(alpha, n, density_profile=p_cylinder)
 
 
 # Set tolerance on field solutions and solve for above problems.
@@ -119,8 +121,8 @@ for t in np.linspace(0, 2*np.pi, N, endpoint=False):
                                   radial_limit=R_max))
 
 X = np.array([i*dx for i in range(N)])
-analytic_field_sphere = solution_sphere(alpha, n, ps, R, r=X)
-analytic_field_cylinder = solution_cylinder(alpha, n, ps, R, r=X)
+analytic_field_sphere = solution_sphere(alpha, n, source_wall(0), R, r=X)
+analytic_field_cylinder = solution_cylinder(alpha, n, source_wall(0), R, r=X)
 
 
 # Plot field profiles against analytic solutions.
@@ -135,13 +137,13 @@ for cc in calculated_field_cylinder[1:]:
     plt.plot(X, cc, 'kx')
 
 plt.plot(X, calculated_field_sphere[0], 'k.',
-         label=r"Analytic $\hat{\phi}_{Sphere}$")
-plt.plot(X, analytic_field_sphere, 'b-',
          label=r"Calculated $\hat{\phi}_{Sphere}$")
+plt.plot(X, analytic_field_sphere, 'b-',
+         label=r"Analytic $\hat{\phi}_{Sphere}$")
 plt.plot(X, calculated_field_cylinder[0], 'kx',
-         label=r"Analytic $\hat{\phi}_{Cylinder}$")
-plt.plot(X, analytic_field_cylinder, 'r-',
          label=r"Calculated $\hat{\phi}_{Cylinder}$")
+plt.plot(X, analytic_field_cylinder, 'r-',
+         label=r"Analytic $\hat{\phi}_{Cylinder}$")
 plt.legend()
 
 
@@ -184,7 +186,7 @@ plt.ylim([-G, G])
 plt.xlim([-G, G])
 plt.ylabel('Y')
 plt.xlabel('X')
-d.plot(subdomains)
+d.plot(p_sphere.subdomains)
 plt.plot([-D, D, D, -D, -D], [-D, -D, D, D, -D], 'r-')
 plt.plot([-D, 0.265], [+D, 1.00], 'r-')
 plt.plot([+D, 0.95], [-D, 0.325], 'r-')
@@ -192,6 +194,6 @@ plt.plot([+D, 0.95], [-D, 0.325], 'r-')
 ax1 = fig.add_axes(ax_pos_1)
 plt.ylim([-D, D])
 plt.xlim([-D, D])
-d.plot(subdomains)
+d.plot(p_sphere.subdomains)
 
 plt.show()

@@ -11,31 +11,21 @@ Example of creating a mesh. In this exapmle the mesh is an empty vacuum chamber
 with a radial size of unity.
 """
 import sys
-import gmsh
-geom = gmsh.model.occ
-
 sys.path.append("..")
-from Main.Meshing_Tools import Meshing_Tools
+from Main.MeshingTools import MeshingTools
 
 # Choose source and vacuum radial sizes.
 r = 1.0
 wt = 0.1
 
-# Create the mesh in gmsh.
-gmsh.initialize()
-gmsh.option.setNumber('General.Verbosity', 1)
+filename = "../Saved Meshes/Circle_Empty_Vacuum_chamber"
 
-MT = Meshing_Tools(Dimension=2)
+# Construct mesh.
+MT = MeshingTools(dimension=2)
 
 MT.create_background_mesh(CellSizeMin=1e-3, CellSizeMax=0.01, DistMax=1.0,
                           background_radius=r, wall_thickness=wt)
-MT.generate_mesh()
 
+MT.generate_mesh(filename, show_mesh=True)
 
-# After saving the mesh view it and then clear and close gmsh.
-filename = "../Saved Meshes/Circle_Empty_Vacuum_chamber"
-gmsh.write(fileName=filename+".msh")
-
-gmsh.fltk.run()
-gmsh.clear()
-gmsh.finalize()
+MT.msh_2_xdmf(filename, delete_old_file=True, auto_override=True)

@@ -5,8 +5,6 @@ Created on Wed May 19 11:06:42 2021
 
 @author: ppycb3
 
-Environment - fenics2019
-
 Tools to produce and modify meshes to be used in simulations.
 
 Notes -
@@ -14,23 +12,28 @@ Notes -
     gmsh.option.setNumber('Mesh.Algorithm3D', 10) is very slow compared
     to default.
 """
+import os
+import sys
 import gmsh
 import meshio
 import numpy as np
-import dolfin as d
-from functools import partial
-geom = gmsh.model.occ
 
 
-class Meshing_Tools():
-    def __init__(self, Dimension):
-        self.dim = Dimension
+class MeshingTools():
+    def __init__(self, dimension):
+        self.dim = dimension
         self.boundaries = []
         self.source = []
         self.refinement_settings = []
         self.source_number = 0
         self.boundary_number = 0
         self.Min_length = 1.3e-6
+        self.geom = gmsh.model.occ
+
+        # Open GMSH window.
+        gmsh.initialize()
+        gmsh.option.setNumber('General.Verbosity', 1)
+
         return None
 
     def points_to_surface(self, Points_list):
@@ -60,15 +63,15 @@ class Meshing_Tools():
 
         'Set points.'
         for p in Points_list:
-            Pl.append(geom.addPoint(p[0], p[1], p[2]))
+            Pl.append(self.geom.addPoint(p[0], p[1], p[2]))
 
         'Join points as lines.'
         for i, _ in enumerate(Points_list):
-            Ll.append(geom.addLine(Pl[i-1], Pl[i]))
+            Ll.append(self.geom.addLine(Pl[i-1], Pl[i]))
 
         'Join lines as a closed loop and surface.'
-        sf = geom.addCurveLoop(Ll)
-        SurfaceDimTag = (2, geom.addPlaneSurface([sf]))
+        sf = self.geom.addCurveLoop(Ll)
+        SurfaceDimTag = (2, self.geom.addPlaneSurface([sf]))
         return SurfaceDimTag
 
     def points_to_volume(self, Contour_list):
@@ -86,19 +89,19 @@ class Meshing_Tools():
 
             'Set points.'
             for p in Points_list:
-                Pl.append(geom.addPoint(p[0], p[1], p[2]))
+                Pl.append(self.geom.addPoint(p[0], p[1], p[2]))
 
             'Join points as lines.'
             for i, _ in enumerate(Points_list):
-                Ll.append(geom.addLine(Pl[i-1], Pl[i]))
+                Ll.append(self.geom.addLine(Pl[i-1], Pl[i]))
 
             'Join lines as a closed loop and surface.'
-            L_list.append(geom.addCurveLoop(Ll))
+            L_list.append(self.geom.addCurveLoop(Ll))
 
-        VolumeDimTag = geom.addThruSections(L_list)
+        VolumeDimTag = self.geom.addThruSections(L_list)
 
         "Delete contour lines."
-        geom.remove(geom.getEntities(dim=1), recursive=True)
+        self.geom.remove(self.geom.getEntities(dim=1), recursive=True)
 
         return VolumeDimTag
 
@@ -119,8 +122,9 @@ class Meshing_Tools():
 
         '''
         # Check for 3D interecting spheres.
-        cutoff = [(3, geom.addSphere(xc=0, yc=0, zc=0, radius=cutoff_radius))]
-        geom.intersect(objectDimTags=shape_DimTags, toolDimTags=cutoff)
+        cutoff = [(3, self.geom.addSphere(xc=0, yc=0, zc=0,
+                                          radius=cutoff_radius))]
+        self.geom.intersect(objectDimTags=shape_DimTags, toolDimTags=cutoff)
         return None
 
     def create_subdomain(self, CellSizeMin=0.1, CellSizeMax=0.1, DistMin=0.0,
@@ -149,14 +153,14 @@ class Meshing_Tools():
 
         '''
         # Save sources, remove duplicates, and update source number.
-        self.source.append(geom.getEntities(dim=self.dim))
+        self.source.append(self.geom.getEntities(dim=self.dim))
         del self.source[-1][:self.source_number]
         self.source_number += len(self.source[-1])
 
         # Check if new entry is empty.
         if self.source[-1]:
             # Save boundary information
-            self.boundaries.append(geom.getEntities(dim=self.dim-1))
+            self.boundaries.append(self.geom.getEntities(dim=self.dim-1))
             del self.boundaries[-1][:self.boundary_number]
             self.boundary_number += len(self.boundaries[-1])
 
@@ -197,19 +201,19 @@ class Meshing_Tools():
                               NumPointsPerCurve)
 
         # Define vacuum and inner wall boundary.
-        source_sum = geom.getEntities(dim=self.dim)
+        source_sum = self.geom.getEntities(dim=self.dim)
 
         if self.dim == 2:
-            background_0 = [(2, geom.addDisk(xc=0, yc=0, zc=0,
-                                             rx=background_radius,
-                                             ry=background_radius))]
+            background_0 = [(2, self.geom.addDisk(xc=0, yc=0, zc=0,
+                                                  rx=background_radius,
+                                                  ry=background_radius))]
         elif self.dim == 3:
-            background_0 = [(3, geom.addSphere(xc=0, yc=0, zc=0,
-                                               radius=background_radius))]
+            background_0 = [(3, self.geom.addSphere(xc=0, yc=0, zc=0,
+                                                    radius=background_radius))]
 
         if self.source:
-            geom.cut(objectDimTags=background_0, toolDimTags=source_sum,
-                     removeObject=True, removeTool=False)
+            self.geom.cut(objectDimTags=background_0, toolDimTags=source_sum,
+                          removeObject=True, removeTool=False)
 
         # Record background as new subdomain.
         self.create_subdomain(CellSizeMin, CellSizeMax, DistMin, DistMax,
@@ -217,20 +221,20 @@ class Meshing_Tools():
 
         # Define wall and outer wall boundary.
         if wall_thickness:
-            source_sum = geom.getEntities(dim=self.dim)
+            source_sum = self.geom.getEntities(dim=self.dim)
 
             if self.dim == 2:
-                wall_0 = [(2, geom.addDisk(
+                wall_0 = [(2, self.geom.addDisk(
                     xc=0, yc=0, zc=0, rx=background_radius+wall_thickness,
                     ry=background_radius+wall_thickness))]
 
             elif self.dim == 3:
-                wall_0 = [(3, geom.addSphere(
+                wall_0 = [(3, self.geom.addSphere(
                     xc=0, yc=0, zc=0,
                     radius=background_radius+wall_thickness))]
 
-            geom.cut(objectDimTags=wall_0, toolDimTags=source_sum,
-                     removeObject=True, removeTool=False)
+            self.geom.cut(objectDimTags=wall_0, toolDimTags=source_sum,
+                          removeObject=True, removeTool=False)
 
             if refine_outer_wall_boundary:
                 self.create_subdomain(CellSizeMin, CellSizeMax, DistMin,
@@ -238,10 +242,10 @@ class Meshing_Tools():
             else:
                 self.create_subdomain()
 
-        geom.synchronize()
+        # self.geom.synchronize()
         return None
 
-    def generate_mesh(self):
+    def generate_mesh(self, filename=None, show_mesh=False):
         '''
         Generates a dim-dimensional mesh whose cells are taged such that
         tag = {1, 2, 3} corresponds to the source, vacuum and wall,
@@ -291,6 +295,8 @@ class Meshing_Tools():
         None.
 
         '''
+        self.geom.synchronize()
+
         # Get boundary_type.
         if self.dim == 2:
             boundary_type = "CurvesList"
@@ -338,9 +344,24 @@ class Meshing_Tools():
 
         # Generate mesh.
         gmsh.model.mesh.generate(dim=self.dim)
+
+        # If Saved Meshes directory not found create one.
+        if os.path.isdir('../Saved Meshes') is False:
+            os.makedirs('../Saved Meshes')
+
+        if filename is not None:
+            gmsh.write(fileName=filename+".msh")
+
+        if show_mesh is True:
+            gmsh.fltk.run()
+
+        gmsh.clear()
+        gmsh.finalize()
+
         return None
 
-    def msh_2_xdmf(self, filename):
+    def msh_2_xdmf(self, filename, delete_old_file=False, auto_override=False):
+        # Add option to delete old files and to not output results.
         '''
         Function converts .msh file (given by filename) and converts it
         into .xdmf and .h5 files which can then be used by dolfin/fenics.
@@ -348,9 +369,25 @@ class Meshing_Tools():
         Returns
         mesh, subdomains
         '''
+        # Create new directory for created files.
+        try:
+            os.makedirs(filename)
+        except FileExistsError:
+            if auto_override is False:
+                print('Directory %s already exists.' % filename)
+                ans = input('Overwrite files inside this directory? (y/n) ')
+
+                if ans.lower() == 'y':
+                    pass
+                elif ans.lower() == 'n':
+                    sys.exit()
+                else:
+                    print('Invalid input.')
+                    sys.exit()
+
         # Define output filenames.
-        outfile_mesh = filename + "_mesh.xdmf"
-        outfile_boundary = filename + "_boundaries.xdmf"
+        outfile_mesh = filename + "/mesh.xdmf"
+        outfile_boundary = filename + "/boundaries.xdmf"
 
         # read input from infile
         inmsh = meshio.read(filename + ".msh")
@@ -392,34 +429,26 @@ class Meshing_Tools():
                         'gmsh:physical']['triangle']]},
                     field_data=inmsh.field_data))
 
-        # Import Mesh
-        mesh = d.Mesh()
-        with d.XDMFFile(outfile_mesh) as meshfile:
-            meshfile.read(mesh)
-            subdomains = d.MeshFunction('size_t', mesh, self.dim)
-            meshfile.read(subdomains, "Subdomain")
+        # Delete .msh file.
+        if delete_old_file is True:
+            os.remove(filename + ".msh")
 
-        with d.XDMFFile(outfile_boundary) as boundaryfile:
-            mvc = d.MeshValueCollection("size_t", mesh, self.dim)
-            boundaryfile.read(mvc, "Boundary")
-            outerwall = d.MeshFunction("size_t", mesh, mvc)
-
-        return mesh, subdomains, outerwall
+        return None
 
     def add_shapes(self, shape_1, shape_2):
         if shape_1 and shape_2:
-            new_shape, _ = geom.fuse(shape_1, shape_2,
-                                     removeObject=False,
-                                     removeTool=False)
+            new_shape, _ = self.geom.fuse(shape_1, shape_2,
+                                          removeObject=False,
+                                          removeTool=False)
 
             'Get rid of unneeded shapes.'
             for shape in shape_1:
                 if shape not in new_shape:
-                    geom.remove([shape], recursive=True)
+                    self.geom.remove([shape], recursive=True)
 
             for shape in shape_2:
                 if shape not in new_shape:
-                    geom.remove([shape], recursive=True)
+                    self.geom.remove([shape], recursive=True)
 
         else:
             new_shape = shape_1 + shape_2
@@ -427,25 +456,25 @@ class Meshing_Tools():
 
     def subtract_shapes(self, shape_1, shape_2):
         if shape_1 and shape_2:
-            new_shape, _ = geom.cut(shape_1, shape_2)
+            new_shape, _ = self.geom.cut(shape_1, shape_2)
         else:
             new_shape = shape_1
-            geom.remove(shape_2, recursive=True)
+            self.geom.remove(shape_2, recursive=True)
 
         return new_shape
 
     def intersect_shapes(self, shape_1, shape_2):
         if shape_1 and shape_2:
-            new_shape, _ = geom.intersect(shape_1, shape_2)
+            new_shape, _ = self.geom.intersect(shape_1, shape_2)
         else:
-            geom.remove(shape_1 + shape_2, recursive=True)
+            self.geom.remove(shape_1 + shape_2, recursive=True)
             new_shape = []
         return new_shape
 
     def non_intersect_shapes(self, shape_1, shape_2):
         "Make unit test to check this works."
         if shape_1 and shape_2:
-            _, fragment_map = geom.fragment(shape_1, shape_2)
+            _, fragment_map = self.geom.fragment(shape_1, shape_2)
 
             shape_fragments = []
             for s in fragment_map:
@@ -465,61 +494,58 @@ class Meshing_Tools():
                 else:
                     new_shape.append(shape_fragments.pop(0))
 
-            geom.remove(to_remove, recursive=True)
+            self.geom.remove(to_remove, recursive=True)
 
         else:
-            geom.remove(shape_1 + shape_2, recursive=True)
+            self.geom.remove(shape_1 + shape_2, recursive=True)
             new_shape = []
         return new_shape
 
     def rotate_x(self, shape, rot_fraction):
-        geom.rotate(shape, x=0, y=0, z=0, ax=1, ay=0, az=0,
-                    angle=2*np.pi*rot_fraction)
+        self.geom.rotate(shape, x=0, y=0, z=0, ax=1, ay=0, az=0,
+                         angle=2*np.pi*rot_fraction)
         return shape
 
     def rotate_y(self, shape, rot_fraction):
-        geom.rotate(shape, x=0, y=0, z=0, ax=0, ay=1, az=0,
-                    angle=2*np.pi*rot_fraction)
+        self.geom.rotate(shape, x=0, y=0, z=0, ax=0, ay=1, az=0,
+                         angle=2*np.pi*rot_fraction)
         return shape
 
     def rotate_z(self, shape, rot_fraction):
-        geom.rotate(shape, x=0, y=0, z=0, ax=0, ay=0, az=1,
-                    angle=2*np.pi*rot_fraction)
+        self.geom.rotate(shape, x=0, y=0, z=0, ax=0, ay=0, az=1,
+                         angle=2*np.pi*rot_fraction)
         return shape
 
     def translate_x(self, shape, dx):
-        geom.translate(shape, dx=dx, dy=0, dz=0)
+        self.geom.translate(shape, dx=dx, dy=0, dz=0)
         return shape
 
     def translate_y(self, shape, dy):
-        geom.translate(shape, dx=0, dy=dy, dz=0)
+        self.geom.translate(shape, dx=0, dy=dy, dz=0)
         return shape
 
     def translate_z(self, shape, dz):
-        geom.translate(shape, dx=0, dy=0, dz=dz)
+        self.geom.translate(shape, dx=0, dy=0, dz=dz)
         return shape
-
-    def unity(self, x):
-        return x
 
     def create_disk(self, rx=0.1, ry=0.1):
         Rx = max(self.Min_length, abs(rx))
         Ry = max(self.Min_length, abs(ry))
 
         if Rx >= Ry:
-            new_disk = [(2, geom.addDisk(xc=0, yc=0, zc=0, rx=Rx, ry=Ry))]
+            new_disk = [(2, self.geom.addDisk(xc=0, yc=0, zc=0, rx=Rx, ry=Ry))]
         else:
-            new_disk = [(2, geom.addDisk(xc=0, yc=0, zc=0, rx=Ry, ry=Rx))]
-            geom.rotate(new_disk, x=0, y=0, z=0, ax=0, ay=0, az=1,
-                        angle=np.pi/2)
+            new_disk = [(2, self.geom.addDisk(xc=0, yc=0, zc=0, rx=Ry, ry=Rx))]
+            self.geom.rotate(new_disk, x=0, y=0, z=0, ax=0, ay=0, az=1,
+                             angle=np.pi/2)
         return new_disk
 
     def create_rectangle(self, dx=0.2, dy=0.2):
         Dx = max(self.Min_length, abs(dx))
         Dy = max(self.Min_length, abs(dy))
 
-        new_rectangle = [(2, geom.addRectangle(x=-Dx/2, y=-Dy/2, z=0,
-                                               dx=Dx, dy=Dy))]
+        new_rectangle = [(2, self.geom.addRectangle(x=-Dx/2, y=-Dy/2, z=0,
+                                                    dx=Dx, dy=Dy))]
         return new_rectangle
 
     def create_ellipsoid(self, rx=0.1, ry=0.1, rz=0.1):
@@ -527,8 +553,8 @@ class Meshing_Tools():
         Ry = max(self.Min_length, abs(ry))
         Rz = max(self.Min_length, abs(rz))
 
-        new_sphere = [(3, geom.addSphere(xc=0, yc=0, zc=0, radius=1))]
-        geom.dilate(new_sphere, x=0, y=0, z=0, a=Rx, b=Ry, c=Rz)
+        new_sphere = [(3, self.geom.addSphere(xc=0, yc=0, zc=0, radius=1))]
+        self.geom.dilate(new_sphere, x=0, y=0, z=0, a=Rx, b=Ry, c=Rz)
         return new_sphere
 
     def create_box(self, dx=0.2, dy=0.2, dz=0.2):
@@ -536,88 +562,30 @@ class Meshing_Tools():
         Dy = max(self.Min_length, abs(dy))
         Dz = max(self.Min_length, abs(dz))
 
-        new_box = [(3, geom.addBox(x=-Dx/2, y=-Dy/2, z=-Dz/2, dx=Dx, dy=Dy,
-                                   dz=Dz))]
+        new_box = [(3, self.geom.addBox(x=-Dx/2, y=-Dy/2, z=-Dz/2, dx=Dx,
+                                        dy=Dy, dz=Dz))]
         return new_box
 
     def create_cylinder(self, Length=0.1, r=0.1):
         L = max(self.Min_length, abs(Length))
         R = max(self.Min_length, abs(r))
 
-        new_cylinder = [(3, geom.addCylinder(x=0, y=0, z=-L/2, dx=0, dy=0,
-                                             dz=L, r=R))]
+        new_cylinder = [(3, self.geom.addCylinder(x=0, y=0, z=-L/2, dx=0, dy=0,
+                                                  dz=L, r=R))]
         return new_cylinder
 
     def create_cone(self, Length=0.1, r=0.1):
         L = max(self.Min_length, abs(Length))
         R = max(self.Min_length, abs(r))
 
-        new_cone = [(3, geom.addCone(x=0, y=0, z=-L/4,
-                                     dx=0, dy=0, dz=L, r1=R, r2=0))]
+        new_cone = [(3, self.geom.addCone(x=0, y=0, z=-L/4, dx=0, dy=0, dz=L,
+                                          r1=R, r2=0))]
         return new_cone
 
     def create_torus(self, r_hole=0.1, r_tube=0.1):
         R_hole = max(self.Min_length, abs(r_hole))
         R_tube = max(self.Min_length, abs(r_tube))
 
-        new_torus = [(3, geom.addTorus(x=0, y=0, z=0, r1=R_hole+R_tube,
-                                       r2=R_tube))]
+        new_torus = [(3, self.geom.addTorus(x=0, y=0, z=0, r1=R_hole+R_tube,
+                                            r2=R_tube))]
         return new_torus
-
-    def apply_add(self, a, b):
-        return partial(self.add_shapes, a, b)()
-
-    def apply_sub(self, a, b):
-        return partial(self.subtract_shapes, a, b)()
-
-    def apply_inx(self, a, b):
-        return partial(self.intersect_shapes, a, b)()
-
-    def apply_ninx(self, a, b):
-        return partial(self.non_intersect_shapes, a, b)()
-
-    def apply_rtx(self, a, b):
-        return partial(self.rotate_x, a, b)()
-
-    def apply_rty(self, a, b):
-        return partial(self.rotate_y, a, b)()
-
-    def apply_rtz(self, a, b):
-        return partial(self.rotate_z, a, b)()
-
-    def apply_tlx(self, a, b):
-        return partial(self.translate_x, a, b)()
-
-    def apply_tly(self, a, b):
-        return partial(self.translate_y, a, b)()
-
-    def apply_create_disk(self, a, b):
-        return partial(self.create_disk, a, b)()
-
-    def apply_create_rectangle(self, a, b):
-        return partial(self.create_rectangle, a, b)()
-
-    def apply_create_unit_disk(self):
-        return partial(self.create_disk)()
-
-    def apply_create_unit_rectangle(self):
-        return partial(self.create_rectangle)()
-
-    def shape_similarity(self, shape_1, shape_2):
-        M1 = 0
-        for s in shape_1:
-            M1 += geom.getMass(dim=s[0], tag=s[1])
-
-        M2 = 0
-        for s in shape_2:
-            M2 += geom.getMass(dim=s[0], tag=s[1])
-
-        Mf = 0
-        if shape_1 and shape_2:
-            fragment, _ = geom.fragment(shape_1, shape_2)
-
-            for f in fragment:
-                Mf += geom.getMass(dim=f[0], tag=f[1])
-
-        residual = abs(2*Mf - M1 - M2)
-        return residual

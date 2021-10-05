@@ -5,29 +5,24 @@ Created on Tue Jul 20 10:13:23 2021
 
 @author: ppycb3
 
-Environment - fenics2019
-
 Example of creating a 2D mesh. In this exapmle the mesh is a torus shaped
 source inside an empty vacuum.
 """
 import sys
-import gmsh
-
 sys.path.append("..")
-from Main.Meshing_Tools import Meshing_Tools
+from Main.MeshingTools import MeshingTools
 
 # Choose source and vacuum radial sizes.
 r_inner = 0.05
 r_t = 0.1
 r_v = 1.0
-
 dx = r_inner + r_t
 
-# Create the mesh in gmsh.
-gmsh.initialize()
-gmsh.option.setNumber('General.Verbosity', 1)
+filename = "../Saved Meshes/Torus_in_Vacuum_2D"
 
-MT = Meshing_Tools(Dimension=2)
+# Create the mesh in gmsh.
+MT = MeshingTools(dimension=2)
+
 c1 = MT.create_disk(rx=r_t, ry=r_t)
 MT.translate_x(c1, dx)
 
@@ -38,13 +33,7 @@ MT.create_subdomain(CellSizeMin=1e-4, CellSizeMax=0.05, DistMax=0.1)
 
 MT.create_background_mesh(CellSizeMin=1e-4, CellSizeMax=0.05, DistMax=0.1,
                           background_radius=r_v, wall_thickness=0.05)
-MT.generate_mesh()
 
+MT.generate_mesh(filename, show_mesh=True)
 
-# After saving the mesh view it and then clear and close gmsh.
-filename = "../Saved Meshes/Torus_in_Vacuum_2D"
-gmsh.write(fileName=filename+".msh")
-
-gmsh.fltk.run()
-gmsh.clear()
-gmsh.finalize()
+MT.msh_2_xdmf(filename, delete_old_file=True, auto_override=True)

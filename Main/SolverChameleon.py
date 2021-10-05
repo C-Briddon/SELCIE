@@ -5,8 +5,6 @@ Created on Tue May 18 09:54:00 2021
 
 @author: ppycb3
 
-Environment - fenics2019
-
 Solving screened scalar field models using finite element method and FEniCS.
 """
 import sys
@@ -15,7 +13,7 @@ import dolfin as d
 import matplotlib.pyplot as plt
 
 
-class Field_Solver(object):
+class FieldSolver(object):
     def __init__(self, alpha, n, density_profile, deg_V=1):
         # Manatory inputs.
         self.alpha = alpha
@@ -25,9 +23,19 @@ class Field_Solver(object):
 
         # Get information from density_profile.
         self.mesh = density_profile.mesh
-        self.subdomains = density_profile.subdomain_markers
+        self.subdomains = density_profile.subdomains
         self.mesh_dimension = density_profile.mesh.topology().dim()
-        self.mesh_symmetry = density_profile.mesh_symmetry
+        self.mesh_symmetry = density_profile.symmetry
+
+        if self.mesh_dimension == 1:
+            if self.mesh_symmetry == 'spherical':
+                self.sym_factor = d.Expression('abs(x)', degree=0)
+            elif self.mesh_symmetry == 'cylindrical':
+                self.sym_factor = d.Expression('pow(x, 2)', degree=0)
+            else:
+                print('Inputted mesh symmetry not recognised.')
+                print('Terminated code prematurely.')
+                sys.exit()
 
         if self.mesh_dimension == 2:
             if self.mesh_symmetry == 'vertical axis-symmetry':

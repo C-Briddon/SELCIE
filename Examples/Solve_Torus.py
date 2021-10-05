@@ -5,56 +5,51 @@ Created on Tue Jul 20 10:47:14 2021
 
 @author: ppycb3
 
-Environment - fenics2019
-
 Solve the chameleon field around a torus shaped source inside a vacuum chamber.
 """
 import numpy as np
 import dolfin as d
 import matplotlib.pyplot as plt
-from timeit import default_timer
-from Density_profiles import source_wall, vacuum
 
 import sys
 sys.path.append("..")
-from Main.Meshing_Tools import Meshing_Tools
-from Main.Solver_Chameleon import Field_Solver
-from Main.Density_Profiles import Density_Profile
+from Main.MeshingTools import MeshingTools
+from Main.SolverChameleon import FieldSolver
+from Main.DensityProfiles import DensityProfile
+
+
+# Define density profile functions.
+def source_wall(x):
+    return 1.0e17
+
+
+def vacuum(x):
+    return 1.0
 
 
 def solve_torus_2D():
-    # Import mesh and convert from .msh to .xdmf.
-    MT_2D = Meshing_Tools(Dimension=2)
-    filename = "../Saved Meshes/Torus_in_Vacuum_2D"
-    mesh, subdomains, boundaries = MT_2D.msh_2_xdmf(filename)
-
     # Define the density profile of the mesh using its subdomains.
-    p_2D = Density_Profile(mesh=mesh, subdomain_markers=subdomains,
-                           mesh_symmetry='vertical axis-symmetry',
-                           profiles=[source_wall, vacuum, source_wall],
-                           degree=0)
+    p_2D = DensityProfile(filename="../Saved Meshes/Torus_in_Vacuum_2D",
+                          dimension=2, symmetry='vertical axis-symmetry',
+                          profiles=[source_wall, vacuum, source_wall],
+                          degree=0)
 
     # Setup problem and solve.
-    s2D = Field_Solver(alpha, n, density_profile=p_2D)
+    s2D = FieldSolver(alpha, n, density_profile=p_2D)
     s2D.picard()
 
     return s2D
 
 
 def solve_torus_3D():
-    # Import mesh and convert from .msh to .xdmf.
-    MT_3D = Meshing_Tools(Dimension=3)
-    filename = "../Saved Meshes/Torus_in_Vacuum_3D"
-    mesh, subdomains, boundaries = MT_3D.msh_2_xdmf(filename)
-
     # Define the density profile of the mesh using its subdomains.
-    p_3D = Density_Profile(mesh=mesh, subdomain_markers=subdomains,
-                           mesh_symmetry='',
-                           profiles=[source_wall, vacuum, source_wall],
-                           degree=0)
+    p_3D = DensityProfile(filename="../Saved Meshes/Torus_in_Vacuum_3D",
+                          dimension=3, symmetry='',
+                          profiles=[source_wall, vacuum, source_wall],
+                          degree=0)
 
     # Setup problem and solve.
-    s3D = Field_Solver(alpha, n, density_profile=p_3D)
+    s3D = FieldSolver(alpha, n, density_profile=p_3D)
     # s3D.picard()
     s3D.picard('cg', 'jacobi')
 

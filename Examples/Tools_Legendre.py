@@ -5,8 +5,6 @@ Created on Tue Aug 25 09:36:41 2020
 
 @author: ppycb3
 
-Environment - fenics2019
-
 Functions for generating Legendre polynomial shapes for testing solvers.
 """
 import math
@@ -16,7 +14,7 @@ import numpy as np
 
 import sys
 sys.path.append("..")
-from Main.Meshing_Tools import Meshing_Tools
+from Main.MeshingTools import MeshingTools
 
 
 def legendre_coef(k, q, odd_or_even):
@@ -80,7 +78,7 @@ def legendre_shape_components(a_coef, angle=2*np.pi, N=100):
 
 def construct_legendre_mesh_2D(a_coef, angle=2*np.pi, N=100,
                                include_holes=True):
-    MT = Meshing_Tools(Dimension=2)
+    MT = MeshingTools(dimension=2)
     shapes_pos, shapes_neg = legendre_shape_components(a_coef, angle, N)
 
     PosDimTags = []

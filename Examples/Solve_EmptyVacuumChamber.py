@@ -5,8 +5,6 @@ Created on Tue Jun  8 20:00:59 2021
 
 @author: ppycb3
 
-Environment - fenics2019
-
 Example solving the chamelon field for an empty vacuum chamber.
 """
 import numpy as np
@@ -15,16 +13,18 @@ import dolfin as d
 
 import sys
 sys.path.append("..")
-from Main.Meshing_Tools import Meshing_Tools
-from Main.Solver_Chameleon import Field_Solver
-from Main.Density_Profiles import Density_Profile
+from Main.MeshingTools import MeshingTools
+from Main.SolverChameleon import FieldSolver
+from Main.DensityProfiles import DensityProfile
 
-from Density_profiles import source_wall, vacuum
 
-# Import mesh and convert from .msh to .xdmf.
-MT = Meshing_Tools(Dimension=2)
-filename = "../Saved Meshes/Circle_Empty_Vacuum_chamber"
-mesh, subdomains, boundaries = MT.msh_2_xdmf(filename)
+# Define density profile functions.
+def source_wall(x):
+    return 1.0e17
+
+
+def vacuum(x):
+    return 1.0
 
 
 # Set model parameters.
@@ -33,9 +33,9 @@ alpha = [1e6, 1e12, 1e18]
 
 
 # Define the density profile of the mesh using its subdomains.
-p = Density_Profile(mesh=mesh, subdomain_markers=subdomains,
-                    mesh_symmetry='vertical axis-symmetry',
-                    profiles=[vacuum, source_wall], degree=0)
+p = DensityProfile(filename="../Saved Meshes/Circle_Empty_Vacuum_chamber",
+                   dimension=2, symmetry='vertical axis-symmetry',
+                   profiles=[vacuum, source_wall], degree=0)
 
 
 # Plot rescaled field for range of alpha values.
@@ -51,7 +51,7 @@ plt.xlabel(r"$\hat{r}$")
 
 for i, a in enumerate(alpha):
     # Setup problem.
-    s = Field_Solver(alpha=a, n=n, density_profile=p)
+    s = FieldSolver(alpha=a, n=n, density_profile=p)
 
     # Set tolerance on field solutions and solve for above problems.
     s.tol_du = 1e-10
@@ -81,7 +81,7 @@ plt.legend(by_label.values(), by_label.keys())
 print(phi_0)
 
 
-"Make image of subdomains."
+# Make image of subdomains.
 G = 1.15
 
 fig = plt.figure(figsize=(6, 4))
@@ -94,6 +94,6 @@ plt.ylim([-G, G])
 plt.xlim([-G, G])
 plt.ylabel('Y')
 plt.xlabel('X')
-d.plot(subdomains)
+d.plot(p.subdomains)
 
 plt.show()
