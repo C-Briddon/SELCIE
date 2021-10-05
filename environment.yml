@@ -1,0 +1,19 @@
+
+name: SELCIE
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.8
+  - fenics=2019.1.0
+  - meshio=4.3.8
+  - matplotlib
+  - astropy
+  - numpy
+  - scipy
+  - pip
+
+  - pip:
+    - gmsh==4.8.3
