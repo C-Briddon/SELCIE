@@ -7,6 +7,7 @@ Created on Tue May 18 09:54:00 2021
 
 Solving screened scalar field models using finite element method and FEniCS.
 """
+import os
 import sys
 import numpy as np
 import dolfin as d
@@ -67,12 +68,12 @@ class FieldSolver(object):
         self.field_min = pow(self.density_max, -1/(self.n+1))
 
         # Setup scalar and vector fields.
-        self.field = d.interpolate(d.Constant(self.field_min), self.V)
-        self.field_grad_mag = d.Function(self.V)
-        self.residual = d.Function(self.V)
-        self.laplacian = d.Function(self.V)
-        self.d_potential = d.Function(self.V)
-        self.field_grad = d.Function(self.V_vector)
+        self.field = None
+        self.field_grad_mag = None
+        self.residual = None
+        self.laplacian = None
+        self.d_potential = None
+        self.field_grad = None
 
         # Assemble matrices.
         self.P = d.assemble(self.p*self.v*self.sym_factor*d.dx)
@@ -116,6 +117,8 @@ class FieldSolver(object):
 
         A0 = d.assemble(d.dot(d.grad(self.u), d.grad(self.v)) *
                         self.sym_factor*d.dx)
+
+        self.field = d.interpolate(d.Constant(self.field_min), self.V)
 
         i = 0
         du_norm = 1
@@ -168,6 +171,8 @@ class FieldSolver(object):
 
         du = d.Function(self.V)
 
+        self.field = d.interpolate(d.Constant(self.field_min), self.V)
+
         i = 0
         du_norm = 1
         while du_norm > self.tol_du and i < self.maxiter:
@@ -205,6 +210,9 @@ class FieldSolver(object):
         None.
 
         '''
+        if self.field is None:
+            self.picard()
+
         solver = d.KrylovSolver(solver_method, preconditioner)
         prm = solver.parameters
         prm['absolute_tolerance'] = self.tol_du
@@ -215,6 +223,8 @@ class FieldSolver(object):
                        self.sym_factor*d.dx)
         b = d.assemble(d.inner(d.grad(self.field), self.v_vector) *
                        self.sym_factor*d.dx)
+
+        self.field_grad = d.Function(self.V_vector)
         solver.solve(A, self.field_grad.vector(), b)
 
         return None
@@ -236,6 +246,9 @@ class FieldSolver(object):
         None.
 
         '''
+        if self.field is None:
+            self.picard()
+
         solver = d.KrylovSolver(solver_method, preconditioner)
         prm = solver.parameters
         prm['absolute_tolerance'] = self.tol_du
@@ -246,6 +259,7 @@ class FieldSolver(object):
                                       d.grad(self.field)))*self.v *
                        self.sym_factor*d.dx)
 
+        self.field_grad_mag = d.Function(self.V)
         solver.solve(self.A, self.field_grad_mag.vector(), b)
 
         return None
@@ -268,7 +282,12 @@ class FieldSolver(object):
         None.
 
         '''
-        self.calc_field_grad_vector()
+        if self.field is None:
+            self.picard()
+
+        if self.field_grad is None:
+            self.calc_field_grad_vector()
+
         solver = d.KrylovSolver(solver_method, preconditioner)
         prm = solver.parameters
         prm['absolute_tolerance'] = self.tol_du
@@ -280,7 +299,9 @@ class FieldSolver(object):
                        self.v*self.sym_factor*d.dx - self.p*self.v *
                        self.sym_factor*d.dx)
 
+        self.residual = d.Function(self.V)
         solver.solve(self.A, self.residual.vector(), b)
+
         return None
 
     def calc_laplacian(self, solver_method="richardson", preconditioner="icc"):
@@ -299,7 +320,9 @@ class FieldSolver(object):
         None.
 
         '''
-        self.calc_field_grad_vector()
+        if self.field_grad is None:
+            self.calc_field_grad_vector()
+
         solver = d.KrylovSolver(solver_method, preconditioner)
         prm = solver.parameters
         prm['absolute_tolerance'] = self.tol_du
@@ -307,6 +330,8 @@ class FieldSolver(object):
         prm['maximum_iterations'] = self.maxiter
 
         b = d.assemble(d.div(self.field_grad)*self.v*self.sym_factor*d.dx)
+
+        self.laplacian = d.Function(self.V)
         solver.solve(self.A, self.laplacian.vector(), b)
         return None
 
@@ -327,6 +352,9 @@ class FieldSolver(object):
         None.
 
         '''
+        if self.field is None:
+            self.picard()
+
         solver = d.KrylovSolver(solver_method, preconditioner)
         prm = solver.parameters
         prm['absolute_tolerance'] = self.tol_du
@@ -334,6 +362,8 @@ class FieldSolver(object):
         prm['maximum_iterations'] = self.maxiter
 
         b = d.assemble(pow(self.field, -self.n-1)*self.v*self.sym_factor*d.dx)
+
+        self.d_potential = d.Function(self.V)
         solver.solve(self.A, self.d_potential.vector(), b)
 
         return None
@@ -366,6 +396,9 @@ class FieldSolver(object):
             The mesh point which corresponds to 'fifth_force_max'.
 
         '''
+        if self.field_grad_mag is None:
+            self.calc_field_grad_mag()
+
         measuring_mesh = d.SubMesh(self.mesh, self.subdomains, 2)
         bmesh = d.BoundaryMesh(measuring_mesh, "exterior")
         bbtree = d.BoundingBoxTree()
@@ -401,6 +434,9 @@ class FieldSolver(object):
 
         '''
         if field_scale is not None:
+            if self.field is None:
+                self.picard()
+
             fig_field = plt.figure()
             plt.title("Field Profile")
             plt.ylabel('y')
@@ -422,6 +458,9 @@ class FieldSolver(object):
                       "is not a valid argument for field_scale.")
 
         if grad_scale is not None:
+            if self.field_grad_mag is None:
+                self.calc_field_grad_mag()
+
             fig_grad = plt.figure()
             plt.title("Magnitude of Field Gradient")
             plt.ylabel('y')
@@ -444,6 +483,9 @@ class FieldSolver(object):
                       "is not a valid argument for grad_scale.")
 
         if res_scale is not None:
+            if self.residual is None:
+                self.calc_field_residual()
+
             fig_res = plt.figure()
             plt.title("Field Residual")
             plt.ylabel('y')
@@ -466,6 +508,9 @@ class FieldSolver(object):
                       "is not a valid argument for res_scale.")
 
         if lapl_scale is not None:
+            if self.laplacian is None:
+                self.calc_laplacian()
+
             fig_lapl = plt.figure()
             plt.title("Laplacian of Field")
             plt.ylabel('y')
@@ -488,6 +533,9 @@ class FieldSolver(object):
                       "is not a valid argument for lapl_scale.")
 
         if pot_scale is not None:
+            if self.d_potential is None:
+                self.calc_d_potential()
+
             fig_pot = plt.figure()
             plt.title("Field Potential")
             plt.ylabel('y')
@@ -542,7 +590,9 @@ class FieldSolver(object):
         if len(gradient_vector) != self.mesh_dimension or \
                 len(origin) != self.mesh_dimension:
             print("Vectors given have the wrong dimesion.")
-            print("Mesh is %iD while 'gradient_vector' and 'origin' are dimension %i and %i, respectively." % (self.mesh_dimension, len(gradient_vector), len(origin)))
+            print("Mesh is %iD while 'gradient_vector'" % self.mesh_dimension,
+                  "and 'origin' are dimension %i" % len(gradient_vector),
+                  "and %i, respectively." % len(origin))
 
             return None
 
@@ -588,9 +638,15 @@ class FieldSolver(object):
 
         '''
         # Get field values for each part of the equation of motion.
-        self.calc_field_residual()
-        self.calc_laplacian()
-        self.calc_d_potential()
+        if self.residual is None:
+            self.calc_field_residual()
+
+        if self.laplacian is None:
+            self.calc_laplacian()
+
+        if self.d_potential is None:
+            self.calc_d_potential()
+
         p_func = d.interpolate(self.p, self.V)
 
         res_value = self.probe_function(self.residual, gradient_vector,
@@ -609,18 +665,107 @@ class FieldSolver(object):
         s *= ds
 
         plt.figure()
-        plt.title("Residual Components Against Displacement Along Given Vector")
+        plt.title("Residual Components Vs Displacement Along Given Vector")
         plt.xlim([0, max(s)])
         plt.yscale("log")
         plt.xlabel("x")
         plt.plot(s, abs(res_value), label=r"$\left|\varepsilon\right|$")
         plt.plot(s, self.alpha*abs(lapl_value),
                  label=r"$\alpha \left|\nabla^2 \hat{\phi}\right|$")
-        # plt.plot(s, abs(dpot_value), label = "$\left|V'(\hat{\phi})\right|$")
         plt.plot(s, abs(dpot_value), label=r"$\hat{\phi}^{-(n+1)}$")
         plt.plot(s, p_value, label=r"$\left|-\hat{\rho}\right|$")
-        # plt.legend(bbox_to_anchor = (0.25, 0.31), prop = {'size': 9.6})
-        plt.legend(bbox_to_anchor=(0.67, 0.38), prop={'size': 9.6})
-        # plt.legend()
+        plt.legend()
+
+        return None
+
+    def save(self, filename, auto_override=False):
+        path = "Saved Solutions/" + filename
+        try:
+            os.makedirs(path)
+        except FileExistsError:
+            if auto_override is False:
+                print('Directory %s already exists.' % path)
+                ans = input('Overwrite files inside this directory? (y/n) ')
+
+                if ans.lower() == 'y':
+                    pass
+                elif ans.lower() == 'n':
+                    sys.exit()
+                else:
+                    print('Invalid input.')
+                    sys.exit()
+
+        # Save solution
+        if self.field is not None:
+            with d.HDF5File(self.mesh.mpi_comm(),
+                            path + "/field.h5", "w") as f:
+                f.write(self.field, "field")
+
+        if self.field_grad_mag is not None:
+            with d.HDF5File(self.mesh.mpi_comm(),
+                            path + "/field_grad_mag.h5", "w") as f:
+                f.write(self.field_grad_mag, "field_grad_mag")
+
+        if self.residual is not None:
+            with d.HDF5File(self.mesh.mpi_comm(),
+                            path + "/residual.h5", "w") as f:
+                f.write(self.residual, "residual")
+
+        if self.laplacian is not None:
+            with d.HDF5File(self.mesh.mpi_comm(),
+                            path + "/laplacian.h5", "w") as f:
+                f.write(self.laplacian, "laplacian")
+
+        if self.d_potential is not None:
+            with d.HDF5File(self.mesh.mpi_comm(),
+                            path + "/d_potential.h5", "w") as f:
+                f.write(self.d_potential, "d_potential")
+
+        if self.field_grad is not None:
+            with d.HDF5File(self.mesh.mpi_comm(),
+                            path + "/field_grad.h5", "w") as f:
+                f.write(self.field_grad, "field_grad")
+
+        return None
+
+    def load(self, filename):
+        path = "Saved Solutions/" + filename
+
+        # Load solution
+        if os.path.exists(path + "/field.h5"):
+            self.field = d.Function(self.V)
+            with d.HDF5File(self.mesh.mpi_comm(),
+                            path + "/field.h5", "r") as f:
+                f.read(self.field, "field")
+
+        if os.path.exists(path + "/field_grad_mag.h5"):
+            self.field_grad_mag = d.Function(self.V)
+            with d.HDF5File(self.mesh.mpi_comm(),
+                            path + "/field_grad_mag.h5", "r") as f:
+                f.read(self.field_grad_mag, "field_grad_mag")
+
+        if os.path.exists(path + "/residual.h5"):
+            self.residual = d.Function(self.V)
+            with d.HDF5File(self.mesh.mpi_comm(),
+                            path + "/residual.h5", "r") as f:
+                f.read(self.residual, "residual")
+
+        if os.path.exists(path + "/laplacian.h5"):
+            self.laplacian = d.Function(self.V)
+            with d.HDF5File(self.mesh.mpi_comm(),
+                            path + "/laplacian.h5", "r") as f:
+                f.read(self.laplacian, "laplacian")
+
+        if os.path.exists(path + "/d_potential.h5"):
+            self.d_potential = d.Function(self.V)
+            with d.HDF5File(self.mesh.mpi_comm(),
+                            path + "/d_potential.h5", "r") as f:
+                f.read(self.d_potential, "d_potential")
+
+        if os.path.exists(path + "/field_grad.h5"):
+            self.field_grad = d.Function(self.V_vector)
+            with d.HDF5File(self.mesh.mpi_comm(),
+                            path + "/field_grad.h5", "r") as f:
+                f.read(self.field_grad, "field_grad")
 
         return None

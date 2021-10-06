@@ -8,8 +8,8 @@ Created on Wed May 19 09:47:03 2021
 Library of density profile function.
 """
 import os
+import sys
 import dolfin as d
-from sys import exit
 
 
 class DensityProfile(d.UserExpression):
@@ -20,7 +20,7 @@ class DensityProfile(d.UserExpression):
             pass
         else:
             print('Directory %s does not exist.' % filename)
-            exit()
+            sys.exit()
 
         # Import Mesh, subdomain and boundary information.
         self.mesh = d.Mesh()

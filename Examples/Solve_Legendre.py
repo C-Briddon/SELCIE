@@ -63,6 +63,7 @@ s = FieldSolver(alpha, n, density_profile=p)
 # Set tolerance on field solutions and solve for above problems.
 s.picard()
 s.calc_field_grad_mag()
+s.calc_field_residual()
 
 field_grad, probe_point = s.measure_fifth_force(boundary_distance=d, tol=d_tol)
 
