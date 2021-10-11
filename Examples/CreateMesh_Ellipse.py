@@ -10,7 +10,6 @@ inside an empty vacuum.
 """
 import sys
 import numpy as np
-import dolfin as d
 sys.path.append("..")
 from Main.MeshingTools import MeshingTools
 

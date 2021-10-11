@@ -43,15 +43,14 @@ def solve_torus_2D():
 
 def solve_torus_3D():
     # Define the density profile of the mesh using its subdomains.
-    p_3D = DensityProfile(filename="../Saved Meshes/Torus_in_Vacuum_3D",
+    p_3D = DensityProfile(filename="../Saved Meshes/Torus_in_Vacuum_3D_2",
                           dimension=3, symmetry='',
                           profiles=[source_wall, vacuum, source_wall],
                           degree=0)
 
     # Setup problem and solve.
     s3D = FieldSolver(alpha, n, density_profile=p_3D)
-    # s3D.picard()
-    s3D.picard('cg', 'jacobi')
+    s3D.newton()
 
     return s3D
 
@@ -102,7 +101,7 @@ def plot_error_slice(s2D, s3D, angle=0.0):
     # Plot 3D slice as 2D plot.
     field3D_slice2D = d.Function(s2D.V)
     v2d = d.vertex_to_dof_map(s2D.V)
-    P = s_2D.mesh.coordinates()
+    P = s2D.mesh.coordinates()
 
     dr = 0.04
     for i, p in enumerate(P):
@@ -169,9 +168,9 @@ def plot_max_error(s2D, s3D, N=1, zoom=False, show_field=True, log_scale=False,
 
 def plot_Res_slice(s2D, s3D, angle=0.0):
     # Plot 3D slice as 2D plot.
-    Res_slice = d.Function(s_2D.V)
-    v2d = d.vertex_to_dof_map(s_2D.V)
-    P = s_2D.mesh.coordinates()
+    Res_slice = d.Function(s2D.V)
+    v2d = d.vertex_to_dof_map(s2D.V)
+    P = s2D.mesh.coordinates()
 
     dr = 0.04
     for i, p in enumerate(P):
@@ -241,7 +240,6 @@ def plot_line(s2D, s3D):
 
 
 def error(s3D):
-    # dr = 0.04
     R = np.linspace(0.2, 0.3, 100)
 
     mean = []

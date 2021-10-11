@@ -242,7 +242,6 @@ class MeshingTools():
             else:
                 self.create_subdomain()
 
-        # self.geom.synchronize()
         return None
 
     def generate_mesh(self, filename=None, show_mesh=False):

@@ -28,16 +28,6 @@ class FieldSolver(object):
         self.mesh_dimension = density_profile.mesh.topology().dim()
         self.mesh_symmetry = density_profile.symmetry
 
-        if self.mesh_dimension == 1:
-            if self.mesh_symmetry == 'spherical':
-                self.sym_factor = d.Expression('abs(x)', degree=0)
-            elif self.mesh_symmetry == 'cylindrical':
-                self.sym_factor = d.Expression('pow(x, 2)', degree=0)
-            else:
-                print('Inputted mesh symmetry not recognised.')
-                print('Terminated code prematurely.')
-                sys.exit()
-
         if self.mesh_dimension == 2:
             if self.mesh_symmetry == 'vertical axis-symmetry':
                 self.sym_factor = d.Expression('abs(x[0])', degree=0)
@@ -80,7 +70,7 @@ class FieldSolver(object):
         self.A = d.assemble(self.u*self.v*self.sym_factor*d.dx)
 
         # Define general solver parameters.
-        self.w = 1.0
+        self.relaxation_parameter = 1.0
         self.tol_residual = 1.0e5
         self.tol_rel_residual = 1.0e-10
         self.tol_du = 1.0e-14
@@ -132,15 +122,15 @@ class FieldSolver(object):
 
             solver.solve(self.alpha*A0 + A1, u.vector(), B - self.P)
             du.vector()[:] = u.vector() - self.field.vector()
-            self.field.assign(self.w*u + (1 - self.w)*self.field)
+            self.field.assign(self.relaxation_parameter*u +
+                              (1 - self.relaxation_parameter)*self.field)
 
             du_norm = d.norm(du.vector(), 'linf')
             print('iter=%d: du_norm=%g' % (i, du_norm))
 
         return None
 
-    def newton(self, relaxation_parameter=1.0, solver_method="cg",
-               preconditioner="jacobi"):
+    def newton(self, solver_method="minres", preconditioner="default"):
         '''
         Use newton method to solve for the chameloen field throughout
         self.mesh according to the parameters, self.n, self.alpha and self.p.
@@ -186,7 +176,7 @@ class FieldSolver(object):
                            self.sym_factor*d.dx)
 
             solver.solve(self.alpha*A0 + A1, du.vector(), B - self.P)
-            self.field.vector()[:] += self.w*du.vector()
+            self.field.vector()[:] += self.relaxation_parameter*du.vector()
 
             du_norm = d.norm(du.vector(), 'linf')
             print('iter=%d: du_norm=%g' % (i, du_norm))
