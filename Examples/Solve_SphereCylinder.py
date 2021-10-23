@@ -3,12 +3,10 @@
 """
 Created on Mon Jun  7 09:25:00 2021
 
-@author: ppycb3
+@author: Chad Briddon
 
-Example demenstrating how to solve for the field profile for a sphere and
-infinitly long cylinder by using the 2D mesh of a circular source inside
-a vacuum. These calculated solutions are then compared to the approximate
-analytic solutions.
+Solve the chameleon field for a sphere and infinitely long cylinder inside a
+vacuum.
 """
 import numpy as np
 import dolfin as d
@@ -68,7 +66,7 @@ def vacuum(x):
 # Import mesh and convert from .msh to .xdmf.
 R = 0.005
 MT = MeshingTools(dimension=2)
-filename = "../Saved Meshes/Circle_in_Vacuum_r" + str(R)
+filename = "Circle_in_Vacuum_r" + str(R)
 
 
 # Set model parameters.
@@ -77,13 +75,13 @@ alpha = 0.1
 
 
 # Define the density profile of the mesh using its subdomains.
-p_sphere = DensityProfile(filename=filename,
-                          dimension=2, symmetry='vertical axis-symmetry',
-                          profiles=[source_wall, vacuum, vacuum], degree=0)
+p_sphere = DensityProfile(filename=filename, dimension=2,
+                          symmetry='vertical axis-symmetry',
+                          profiles=[source_wall, vacuum, vacuum])
 
-p_cylinder = DensityProfile(filename=filename,
-                            dimension=2, symmetry='cylinder slice',
-                            profiles=[source_wall, vacuum, vacuum], degree=0)
+p_cylinder = DensityProfile(filename=filename, dimension=2,
+                            symmetry='cylinder slice',
+                            profiles=[source_wall, vacuum, vacuum])
 
 
 # Setup problem.
@@ -126,7 +124,11 @@ analytic_field_cylinder = solution_cylinder(alpha, n, source_wall(0), R, r=X)
 
 
 # Plot field profiles against analytic solutions.
-plt.figure()
+plt.rc('axes', titlesize=10)                # fontsize of the axes title
+plt.rc('axes', labelsize=14)                # fontsize of the x and y labels
+plt.rc('legend', fontsize=13)               # legend fontsize
+
+plt.figure(figsize=[5.8, 4.0], dpi=150)
 plt.ylabel(r"$\hat{\phi}$")
 plt.xlabel(r"$\hat{r}$")
 
@@ -149,7 +151,7 @@ plt.legend()
 
 # Plot relative errors between analytic and calculated solutions.
 plt.figure()
-plt.ylabel(r"$\hat{\phi}$")
+plt.ylabel(r"$\delta \hat{\phi}/\hat{\phi}$")
 plt.xlabel(r"$\hat{r}$")
 
 for cs in calculated_field_sphere[1:]:
@@ -184,8 +186,8 @@ ax_pos_1 = [0.55, 0.65, 0.25, 0.25]
 ax0 = fig.add_axes(ax_pos_0)
 plt.ylim([-G, G])
 plt.xlim([-G, G])
-plt.ylabel('Y')
-plt.xlabel('X')
+plt.ylabel('y')
+plt.xlabel('x')
 d.plot(p_sphere.subdomains)
 plt.plot([-D, D, D, -D, -D], [-D, -D, D, D, -D], 'r-')
 plt.plot([-D, 0.265], [+D, 1.00], 'r-')
@@ -195,5 +197,3 @@ ax1 = fig.add_axes(ax_pos_1)
 plt.ylim([-D, D])
 plt.xlim([-D, D])
 d.plot(p_sphere.subdomains)
-
-plt.show()

@@ -3,33 +3,59 @@
 """
 Created on Wed May 19 09:47:03 2021
 
-@author: ppycb3
+@author: Chad Briddon
 
-Library of density profile function.
+Code to construct system using saved mesh and user defined density profiles.
 """
 import os
-import sys
 import dolfin as d
 
 
 class DensityProfile(d.UserExpression):
-    def __init__(self, filename, dimension, symmetry, profiles, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, filename, dimension, symmetry, profiles, degree=0):
+        '''
+        A class used to define the piecewise density field attributed to a
+        given mesh consisting of some number of subdomains.
 
-        if os.path.isdir(filename):
-            pass
-        else:
-            print('Directory %s does not exist.' % filename)
-            sys.exit()
+        Parameters
+        ----------
+        filename : str
+            The name of the directory containing the saved mesh files.
+            From current directory the path to files must be
+            'Saved Meshes'/'filename'. Files must be in .xdmf format which
+            can be converted from .msh using 'Main.MeshingTools.msh_2_xdmf()'.
+        dimension : int
+            Number of spacial dimensions of the inputted mesh.
+        symmetry : str
+            Specify a symmetry to be imposed on the density field.
+            For 3D meshes symmetry is used. Options for 2D meshes are:
+                'vertical axis-symmetry', 'horizontal axis-symmetry',
+                'cylinder slice'.
+        profiles : list of function
+            List containing the functions that define the density field inside
+            each subdomain of the given mesh. The functions are assigned to
+            the subdomains in numerical order. E.g. first function in list
+            assigned to subdomain with index 1. If 'profiles' is too long the
+            extra functions will be left unsed.
+        degree : int, optional
+            Degree of finite-element space. The default is 0.
+
+        '''
+
+        super().__init__(degree)
+
+        file_path = "Saved Meshes/" + filename
+        if os.path.isdir(file_path) is False:
+            raise Exception("Directory '%s' does not exist." % file_path)
 
         # Import Mesh, subdomain and boundary information.
         self.mesh = d.Mesh()
-        with d.XDMFFile(filename + "/mesh.xdmf") as meshfile:
+        with d.XDMFFile(file_path + "/mesh.xdmf") as meshfile:
             meshfile.read(self.mesh)
             self.subdomains = d.MeshFunction('size_t', self.mesh, dimension)
             meshfile.read(self.subdomains, "Subdomain")
 
-        with d.XDMFFile(filename + "/boundaries.xdmf") as boundaryfile:
+        with d.XDMFFile(file_path + "/boundaries.xdmf") as boundaryfile:
             mvc = d.MeshValueCollection("size_t", self.mesh, dimension)
             boundaryfile.read(mvc, "Boundary")
             self.boundary = d.MeshFunction("size_t", self.mesh, mvc)
@@ -48,6 +74,9 @@ class DensityProfile(d.UserExpression):
                 break
             else:
                 i += 1
+
+        if i == len(self.profiles):
+            raise Exception("More subdomains then functions in 'profiles'.")
 
         return None
 

@@ -3,9 +3,9 @@
 """
 Created on Tue Jul 20 13:51:59 2021
 
-@author: ppycb3
+@author: Chad Briddon
 
-Example of creating a 3D mesh. In this exapmle the mesh is a torus shaped
+Example of creating a 3D mesh. In this example the mesh is a torus shaped
 source inside an empty vacuum.
 """
 import sys
@@ -17,7 +17,7 @@ r_inner = 0.05
 r_t = 0.1
 r_v = 1.0
 
-filename = "../Saved Meshes/Torus_in_Vacuum_3D_2"
+filename = "Torus_in_Vacuum_3D"
 
 # Create the mesh in gmsh.
 MT = MeshingTools(dimension=3)

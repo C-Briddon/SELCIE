@@ -3,9 +3,9 @@
 """
 Created on Mon Jun  7 13:49:00 2021
 
-@author: ppycb3
+@author: Chad Briddon
 
-Example of creating a mesh. In this exapmle the mesh is a circular source
+Example of creating a mesh. In this example the mesh is a circular source
 inside an empty vacuum.
 """
 import sys
@@ -16,12 +16,12 @@ from Main.MeshingTools import MeshingTools
 r_s = 0.005
 r_v = 1.0
 
-filename = "../Saved Meshes/Circle_in_Vacuum_r" + str(r_s)
+filename = "Circle_in_Vacuum_r" + str(r_s)
 
 # Construct mesh.
 MT = MeshingTools(dimension=2)
 
-MT.create_disk(rx=r_s, ry=r_s)
+MT.create_ellipse(rx=r_s, ry=r_s)
 MT.create_subdomain(CellSizeMin=1e-5, CellSizeMax=0.05, DistMax=0.4)
 
 MT.create_background_mesh(CellSizeMin=1e-3, CellSizeMax=0.05, DistMax=0.4,

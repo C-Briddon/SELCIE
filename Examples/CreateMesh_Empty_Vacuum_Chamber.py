@@ -3,11 +3,9 @@
 """
 Created on Tue Jun  8 14:28:23 2021
 
-@author: ppycb3
+@author: Chad Briddon
 
-Environment - fenics2019
-
-Example of creating a mesh. In this exapmle the mesh is an empty vacuum chamber
+Example of creating a mesh. In this example the mesh is an empty vacuum chamber
 with a radial size of unity.
 """
 import sys
@@ -18,7 +16,7 @@ from Main.MeshingTools import MeshingTools
 r = 1.0
 wt = 0.1
 
-filename = "../Saved Meshes/Circle_Empty_Vacuum_chamber"
+filename = "Circle_Empty_Vacuum_chamber"
 
 # Construct mesh.
 MT = MeshingTools(dimension=2)

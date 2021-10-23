@@ -3,11 +3,9 @@
 """
 Created on Fri Aug 27 15:17:40 2021
 
-@author: ppycb3
+@author: Chad Briddon
 
-Environment - fenics2019
-
-Generate mesh for NFW galaxay profile with a crust region.
+Generate mesh for NFW galexy cluster profile with a core region.
 """
 import sys
 sys.path.append("..")
@@ -17,12 +15,12 @@ from Main.MeshingTools import MeshingTools
 r_cutoff = 1e-6
 domain_size = 10
 
-filename = "../Saved Meshes/NFW_Galaxy"
+filename = "NFW_Galaxy"
 
 # Create the mesh in gmsh.
 MT = MeshingTools(dimension=2)
 
-MT.create_disk(rx=r_cutoff, ry=r_cutoff)
+MT.create_ellipse(rx=r_cutoff, ry=r_cutoff)
 MT.create_subdomain(CellSizeMin=2e-7, CellSizeMax=0.1, DistMax=0.1)
 
 MT.create_background_mesh(CellSizeMin=0.1, CellSizeMax=0.1, DistMax=0.1,

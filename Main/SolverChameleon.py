@@ -3,9 +3,10 @@
 """
 Created on Tue May 18 09:54:00 2021
 
-@author: ppycb3
+@author: Chad Briddon
 
-Solving screened scalar field models using finite element method and FEniCS.
+Solving the chameleon screened scalar field model using the finite element
+method and FEniCS.
 """
 import os
 import sys
@@ -16,6 +17,31 @@ import matplotlib.pyplot as plt
 
 class FieldSolver(object):
     def __init__(self, alpha, n, density_profile, deg_V=1):
+        '''
+        Class used to calculate the chameleon scalar field profiles for given
+        parameters and density field profile. The equation of motion of the
+        field must be of the form, 'alpha*nabla^2 phi + phi^{-(n+1)} = p',
+        where nabla, phi, and p are all dimensionless through the rescaling
+        described in [ref].
+
+        This class also contains tools to diagnose and enterpolate the field
+        solution, such as calculating its field gradient, plotting the results,
+        and locating where the force produced by this field is maximum.
+
+        Parameters
+        ----------
+        alpha : float
+            Spatial coupling constant of the rescaled chameleon field.
+        n : int
+            Integer value which defines the form of the field potential.
+        density_profile : SECLIE.Main.DensityProfiles.DensityProfile
+            A class used to define the piece-wise density field attributed to a
+            given mesh consisting of some number of subdomains.
+        deg_V : int, optional
+            Degree of finite-element space. The default is 1.
+
+        '''
+
         # Manatory inputs.
         self.alpha = alpha
         self.n = n
@@ -62,8 +88,9 @@ class FieldSolver(object):
         self.field_grad_mag = None
         self.residual = None
         self.laplacian = None
-        self.d_potential = None
+        self.potential_derivative = None
         self.field_grad = None
+        self.p_field = None
 
         # Assemble matrices.
         self.P = d.assemble(self.p*self.v*self.sym_factor*d.dx)
@@ -71,8 +98,6 @@ class FieldSolver(object):
 
         # Define general solver parameters.
         self.relaxation_parameter = 1.0
-        self.tol_residual = 1.0e5
-        self.tol_rel_residual = 1.0e-10
         self.tol_du = 1.0e-14
         self.tol_rel_du = 1.0e-10
         self.maxiter = 1000
@@ -81,21 +106,26 @@ class FieldSolver(object):
 
     def picard(self, solver_method="cg", preconditioner="default"):
         '''
-        Use picard method to solve for the chameloen field throughout
+        Use Picard method to solve for the chameleon field throughout
         self.mesh according to the parameters, self.n, self.alpha and self.p.
 
         Parameters
         ----------
-        solver_method : TYPE str, optional
-            DESCRIPTION. The default is "cg".
-        preconditioner : TYPE str, optional
-            DESCRIPTION. The default is "default".
+        solver_method : str, optional
+            Method applied by FEniCS to solve the linear approximation in each
+            of the iterative steps. For up-to-date list use
+            dolfin.list_linear_solver_methods(). The default is "cg".
+        preconditioner : str, optional
+            Preconditioner applied to the linear calculation. For up-to-date
+            list use dolfin.list_krylov_solver_preconditioners().
+            The default is "default".
 
         Returns
         -------
         None.
 
         '''
+
         solver = d.KrylovSolver(solver_method, preconditioner)
         prm = solver.parameters
         prm['absolute_tolerance'] = self.tol_du
@@ -130,26 +160,28 @@ class FieldSolver(object):
 
         return None
 
-    def newton(self, solver_method="minres", preconditioner="default"):
+    def newton(self, solver_method="cg", preconditioner="default"):
         '''
-        Use newton method to solve for the chameloen field throughout
+        Use Newton method to solve for the chameloen field throughout
         self.mesh according to the parameters, self.n, self.alpha and self.p.
 
         Parameters
         ----------
-        relaxation_parameter : TYPE float, optional
-            DESCRIPTION. The default is 1.0.
-            The relaxation parameter controls the iterative time step.
-        solver_method : TYPE str, optional
-            DESCRIPTION. The default is "cg".
-        preconditioner : TYPE str, optional
-            DESCRIPTION. The default is "jacobi".
+        solver_method : str, optional
+            Method applied by FEniCS to solve the linear approximation in each
+            of the iterative steps. For up-to-date list use
+            dolfin.list_linear_solver_methods(). The default is "cg".
+        preconditioner : str, optional
+            Preconditioner applied to the linear calculation. For up-to-date
+            list use dolfin.list_krylov_solver_preconditioners().
+            The default is "default".
 
         Returns
         -------
         None.
 
         '''
+
         solver = d.KrylovSolver(solver_method, preconditioner)
         prm = solver.parameters
         prm['absolute_tolerance'] = self.tol_du
@@ -186,20 +218,26 @@ class FieldSolver(object):
     def calc_field_grad_vector(self, solver_method="cg",
                                preconditioner="jacobi"):
         '''
-        Calculate the vector gradient of self.field.
+        Calculate the field vector gradient of self.field and stores it as
+        'self.field_grad'.
 
         Parameters
         ----------
-        solver_method : TYPE str, optional
-            DESCRIPTION. The default is "cg".
-        preconditioner : TYPE str, optional
-            DESCRIPTION. The default is "jacobi".
+        solver_method : str, optional
+            Method applied by FEniCS to solve the linear approximation in each
+            of the iterative steps. For up-to-date list use
+            dolfin.list_linear_solver_methods(). The default is "cg".
+        preconditioner : str, optional
+            Preconditioner applied to the linear calculation. For up-to-date
+            list use dolfin.list_krylov_solver_preconditioners().
+            The default is "jacobi".
 
         Returns
         -------
         None.
 
         '''
+
         if self.field is None:
             self.picard()
 
@@ -221,21 +259,26 @@ class FieldSolver(object):
 
     def calc_field_grad_mag(self, solver_method="cg", preconditioner="jacobi"):
         '''
-        Calculate the magnitude of the field gradient of self.field.
-        Is equivalent to |self.field_grad_vector|.
+        Calculate the magnitude of the field gradient of self.field and stores
+        it as 'self.field_grad_mag'. Is equivalent to |self.field_grad_vector|.
 
         Parameters
         ----------
-        solver_method : TYPE str, optional
-            DESCRIPTION. The default is "cg".
-        preconditioner : TYPE str, optional
-            DESCRIPTION. The default is "jacobi".
+        solver_method : str, optional
+            Method applied by FEniCS to solve the linear approximation in each
+            of the iterative steps. For up-to-date list use
+            dolfin.list_linear_solver_methods(). The default is "cg".
+        preconditioner : str, optional
+            Preconditioner applied to the linear calculation. For up-to-date
+            list use dolfin.list_krylov_solver_preconditioners().
+            The default is "jacobi".
 
         Returns
         -------
         None.
 
         '''
+
         if self.field is None:
             self.picard()
 
@@ -257,21 +300,26 @@ class FieldSolver(object):
     def calc_field_residual(self, solver_method="richardson",
                             preconditioner="icc"):
         '''
-        Calculate the residual of the solution self.field from the field's
-        equation of motion.
+        Inputs 'self.field' into the equation of motion to get the strong
+        residual of the solution and stores it as 'self.residual'.
 
         Parameters
         ----------
-        solver_method : TYPE str, optional
-            DESCRIPTION. The default is "richardson".
-        preconditioner : TYPE str, optional
-            DESCRIPTION. The default is "icc".
+        solver_method : str, optional
+            Method applied by FEniCS to solve the linear approximation in each
+            of the iterative steps. For up-to-date list use
+            dolfin.list_linear_solver_methods(). The default is "richardson".
+        preconditioner : str, optional
+            Preconditioner applied to the linear calculation. For up-to-date
+            list use dolfin.list_krylov_solver_preconditioners().
+            The default is "icc".
 
         Returns
         -------
         None.
 
         '''
+
         if self.field is None:
             self.picard()
 
@@ -296,20 +344,26 @@ class FieldSolver(object):
 
     def calc_laplacian(self, solver_method="richardson", preconditioner="icc"):
         '''
-        Calculates the laplacian of the self.field.
+        Calculates the Laplacian of 'self.field' and stores it as
+        'self.laplacian'.
 
         Parameters
         ----------
-        solver_method : TYPE str, optional
-            DESCRIPTION. The default is "richardson".
-        preconditioner : TYPE str, optional
-            DESCRIPTION. The default is "icc".
+        solver_method : str, optional
+            Method applied by FEniCS to solve the linear approximation in each
+            of the iterative steps. For up-to-date list use
+            dolfin.list_linear_solver_methods(). The default is "richardson".
+        preconditioner : str, optional
+            Preconditioner applied to the linear calculation. For up-to-date
+            list use dolfin.list_krylov_solver_preconditioners().
+            The default is "icc".
 
         Returns
         -------
         None.
 
         '''
+
         if self.field_grad is None:
             self.calc_field_grad_vector()
 
@@ -323,25 +377,48 @@ class FieldSolver(object):
 
         self.laplacian = d.Function(self.V)
         solver.solve(self.A, self.laplacian.vector(), b)
+
         return None
 
-    def calc_d_potential(self, solver_method="richardson",
-                         preconditioner="icc"):
+    def calc_density_field(self):
         '''
-        Calculate the derivative of the field potencial of self.field.
-
-        Parameters
-        ----------
-        solver_method : TYPE str, optional
-            DESCRIPTION. The default is "richardson".
-        preconditioner : TYPE str, optional
-            DESCRIPTION. The default is "icc".
+        Calculates a field profile that corresponds to the density profile
+        contained in 'self.p' and stores it as 'self.p_field'.
 
         Returns
         -------
         None.
 
         '''
+
+        self.p_field = d.interpolate(self.p, self.V)
+
+        return None
+
+    def calc_potential_derivative(self, solver_method="richardson",
+                                  preconditioner="icc"):
+        '''
+        Calculate the derivative of the field potencial of 'self.field', which
+        is equivalent to 'self.field^{-(self.n+1)}', and saves it as
+        'self.potential_derivative'.
+
+        Parameters
+        ----------
+        solver_method : str, optional
+            Method applied by FEniCS to solve the linear approximation in each
+            of the iterative steps. For up-to-date list use
+            dolfin.list_linear_solver_methods(). The default is "richardson".
+        preconditioner : str, optional
+            Preconditioner applied to the linear calculation. For up-to-date
+            list use dolfin.list_krylov_solver_preconditioners().
+            The default is "icc".
+
+        Returns
+        -------
+        None.
+
+        '''
+
         if self.field is None:
             self.picard()
 
@@ -353,48 +430,52 @@ class FieldSolver(object):
 
         b = d.assemble(pow(self.field, -self.n-1)*self.v*self.sym_factor*d.dx)
 
-        self.d_potential = d.Function(self.V)
-        solver.solve(self.A, self.d_potential.vector(), b)
+        self.potential_derivative = d.Function(self.V)
+        solver.solve(self.A, self.potential_derivative.vector(), b)
 
         return None
 
-    def measure_fifth_force(self, boundary_distance, tol):
+    def measure_fifth_force(self, subdomain, boundary_distance, tol):
         '''
-        Measure the fifth force induced by the field by locating where
-        self.field_grad_mag has a maximum in the region 'boundary_distance'
-        away from the exterior of the 'vacuum' region.
+        Locates the mesh vertex which has the largest value of field gradient
+        in a region near to a boundary in a specified subdomain.
 
         Parameters
         ----------
-        boundary_distance : TYPE float
-            DESCRIPTION.
-            The distance away from boundaries of the measurable
-            for which you want to probe the fifth force.
-        tol : TYPE float
-            DESCRIPTION.
-            The tolerance of 'boundary_distance'.
-            E.g. measurements will be taken at mesh vertices in the region
-            'boundary_distance' +/- 'tol'/2 away from the boundaries of the
-            measurable region.
+        subdomain : int
+            Index of the subdoamin to be probed.
+        boundary_distance : float
+            Distance between the subdomain boundary and measurement within
+            some tolerance.
+        tol : float
+            The allowed tolerance on 'boundary_distance' such that measurements
+            are taken at a distance ('boundary_distance' +/- 'tol'/2) from the
+            subdomain boundary.
 
         Returns
         -------
-        fifth_force_max : TYPE float
-            The largest value of self.field_grad_mag found in the
-            probed region.
-        probe_point : TYPE dolfin.cpp.geometry.Point
-            The mesh point which corresponds to 'fifth_force_max'.
+        fifth_force_max : float
+            Maximum value of field gradient found in the probed region.
+        probe_point : tuple
+            Tuple containing x, y, and z coordinate of point where the maximum
+            field gradient was located.
 
         '''
+
         if self.field_grad_mag is None:
             self.calc_field_grad_mag()
 
-        measuring_mesh = d.SubMesh(self.mesh, self.subdomains, 2)
-        bmesh = d.BoundaryMesh(measuring_mesh, "exterior")
-        bbtree = d.BoundingBoxTree()
-        bbtree.build(bmesh)
+        try:
+            measuring_mesh = d.SubMesh(self.mesh, self.subdomains, subdomain)
+            bmesh = d.BoundaryMesh(measuring_mesh, "exterior")
+            bbtree = d.BoundingBoxTree()
+            bbtree.build(bmesh)
+        except Exception:
+            raise Exception(
+                "Error has occured. Check Your subdomain index is correct.")
 
         fifth_force_max = 0.0
+        probe_point = None
 
         for v in d.vertices(measuring_mesh):
             _, distance = bbtree.compute_closest_entity(v.point())
@@ -407,65 +488,69 @@ class FieldSolver(object):
                     fifth_force_max = ff
                     probe_point = v.point()
 
-        return fifth_force_max, probe_point
+        if probe_point is None:
+            raise Exception(
+                "No vertex found. Try changing search parameters.")
+
+        return fifth_force_max, (probe_point.x(), probe_point.y(),
+                                 probe_point.z())
 
     def plot_results(self, field_scale=None, grad_scale=None, res_scale=None,
-                     lapl_scale=None, pot_scale=None):
+                     lapl_scale=None, dpot_scale=None, density_scale=None):
         '''
-        Plots self.field, self.field_grad_mag and or self.field_residual.
-        Options for plot scales are:
-            - None (default)
-            - 'linear'
-            - 'log'
+        Plot calculated field properties such as the field, gradient, strong
+        residual, Laplacian, potential derivative, and density profile.
+        Note currently only works for 2D solutions.
+
+        Parameters
+        ----------
+        field_scale : {None, 'linear', 'log'}, optional
+            Plots 'self.field' using specified scale.
+            Plots nothing if None. The default is None.
+        grad_scale : {None, 'linear', 'log'}, optional
+            Plots 'self.field_grad_mag' using specified scale.
+            Plots nothing if None. The default is None.
+        res_scale : {None, 'linear', 'log'}, optional
+            Plots 'self.residual' using specified scale.
+            Plots nothing if None. The default is None.
+        lapl_scale : {None, 'linear', 'log'}, optional
+            Plots 'self.laplacian' using specified scale.
+            Plots nothing if None. The default is None.
+        dpot_scale : {None, 'linear', 'log'}, optional
+            Plots 'self.potential_derivative' using specified scale.
+            Plots nothing if None. The default is None.
+        density_scale : {None, 'linear', 'log'}, optional
+            Plots 'self.p_field' using specified scale.
+            Plots nothing if None. The default is None.
 
         Returns
         -------
         None.
 
         '''
-        if field_scale is not None:
-            if self.field is None:
-                self.picard()
-
-            fig_field = plt.figure()
-            plt.title("Field Profile")
-            plt.ylabel('y')
-            plt.xlabel('x')
-
-            if field_scale.lower() == "linear":
-                img_field = d.plot(self.field)
-                fig_field.colorbar(img_field)
-
-            elif field_scale.lower() == "log":
-                log_field = d.Function(self.V)
-                log_field.vector()[:] = np.log10(self.field.vector()[:])
-                img_field = d.plot(log_field)
-                fig_field.colorbar(img_field)
-
-            else:
-                print("")
-                print('"' + field_scale + '"',
-                      "is not a valid argument for field_scale.")
 
         if grad_scale is not None:
             if self.field_grad_mag is None:
                 self.calc_field_grad_mag()
 
-            fig_grad = plt.figure()
+            fig_grad = plt.figure(dpi=150)
             plt.title("Magnitude of Field Gradient")
             plt.ylabel('y')
             plt.xlabel('x')
 
             if grad_scale.lower() == "linear":
                 img_grad = d.plot(self.field_grad_mag)
-                fig_grad.colorbar(img_grad)
+                fig_grad.colorbar(img_grad,
+                                  label=r"$|\hat{\nabla} \hat{\phi}|$")
 
             elif grad_scale.lower() == "log":
                 log_grad = d.Function(self.V)
                 log_grad.vector()[:] = np.log10(
                     abs(self.field_grad_mag.vector()[:]) + 1e-14)
                 img_grad = d.plot(log_grad)
-                fig_grad.colorbar(img_grad)
+                fig_grad.colorbar(
+                    img_grad,
+                    label=r"$\log_{10}(|\hat{\nabla} \hat{\phi}|)$")
 
             else:
                 print("")
@@ -476,21 +561,22 @@ class FieldSolver(object):
             if self.residual is None:
                 self.calc_field_residual()
 
-            fig_res = plt.figure()
+            fig_res = plt.figure(dpi=150)
             plt.title("Field Residual")
             plt.ylabel('y')
             plt.xlabel('x')
 
             if res_scale.lower() == "linear":
                 img_res = d.plot(self.residual)
-                fig_res.colorbar(img_res)
+                fig_res.colorbar(img_res, label=r"$\hat{\epsilon}$")
 
             elif res_scale.lower() == "log":
                 log_res = d.Function(self.V)
                 log_res.vector()[:] = np.log10(
                     abs(self.residual.vector()[:]) + 1e-14)
                 img_res = d.plot(log_res)
-                fig_res.colorbar(img_res)
+                fig_res.colorbar(img_res,
+                                 label=r"$\log_{10}(|\hat{\epsilon}|)$")
 
             else:
                 print("")
@@ -508,75 +594,105 @@ class FieldSolver(object):
 
             if lapl_scale.lower() == "linear":
                 img_lapl = d.plot(self.laplacian)
-                fig_lapl.colorbar(img_lapl)
+                fig_lapl.colorbar(img_lapl,
+                                  label=r"$\hat{\nabla}^2 \hat{\phi}$")
 
             elif lapl_scale.lower() == "log":
                 log_lapl = d.Function(self.V)
                 log_lapl.vector()[:] = np.log10(
                     abs(self.laplacian.vector()[:]) + 1e-14)
                 img_lapl = d.plot(log_lapl)
-                fig_lapl.colorbar(img_lapl)
+                fig_lapl.colorbar(
+                    img_lapl,
+                    label=r"$\log_{10}(|\hat{\nabla}^2\hat{\phi}|)$")
 
             else:
                 print("")
                 print('"' + lapl_scale + '"',
                       "is not a valid argument for lapl_scale.")
 
-        if pot_scale is not None:
-            if self.d_potential is None:
-                self.calc_d_potential()
+        if dpot_scale is not None:
+            if self.potential_derivative is None:
+                self.calc_potential_derivative()
 
             fig_pot = plt.figure()
             plt.title("Field Potential")
             plt.ylabel('y')
             plt.xlabel('x')
 
-            if pot_scale.lower() == "linear":
-                img_pot = d.plot(self.d_potential)
-                fig_pot.colorbar(img_pot)
+            if dpot_scale.lower() == "linear":
+                img_pot = d.plot(self.potential_derivative)
+                fig_pot.colorbar(img_pot,
+                                 label=r"\left|$\hat{V}'(\hat{\phi})\right|$")
 
-            elif pot_scale.lower() == "log":
+            elif dpot_scale.lower() == "log":
                 log_pot = d.Function(self.V)
                 log_pot.vector()[:] = np.log10(
-                    abs(self.d_potential.vector()[:]) + 1e-14)
+                    abs(self.potential_derivative.vector()[:]) + 1e-14)
                 img_pot = d.plot(log_pot)
-                fig_pot.colorbar(img_pot)
+                fig_pot.colorbar(img_pot,
+                                 label=r"$\log_{10}(|\hat{V}'(\hat{\phi})|)$")
 
             else:
                 print("")
-                print('"' + pot_scale + '"',
-                      "is not a valid argument for pot_scale.")
+                print('"' + dpot_scale + '"',
+                      "is not a valid argument for dpot_scale.")
+
+        if density_scale is not None:
+            if self.p_field is None:
+                self.calc_density_field()
+
+            fig_density = plt.figure(dpi=150)
+            plt.title("Density Field")
+            plt.ylabel('y')
+            plt.xlabel('x')
+
+            if density_scale.lower() == "linear":
+                img_density = d.plot(self.p_field, extend='max')
+                fig_density.colorbar(img_density, label=r"$\hat{\rho}$")
+
+            elif density_scale.lower() == "log":
+                log_density = d.Function(self.V)
+                log_density.vector()[:] = np.log10(self.p_field.vector()[:]
+                                                   + 1e-14)
+                img_density = d.plot(log_density, extend='max')
+                fig_density.colorbar(img_density,
+                                     label=r'$\log_{10}(\hat{\rho})$')
+
+            else:
+                print("")
+                print('"' + density_scale + '"',
+                      "is not a valid argument for density_scale.")
 
         return None
 
     def probe_function(self, function, gradient_vector,
                        origin=np.array([0, 0]), radial_limit=1.0):
         '''
-        Evaluate the inputted 'function' by measuring its values along
-        the line defined by the argument vectors according to
-        'Y = gradient_vector*X + origin', where X takes intager
-        values starting at zero.
+        Evaluate the inputted 'function' by measuring its values along the
+        vector path defined by (Y = 'gradient_vector'*X + 'origin'), where X
+        takes intager values starting at zero.
 
         Parameters
         ----------
-        function : TYPE dolfin Function.
+        function : dolfin.function.function.Function.
             The function to be evaluated.
-        gradient_vector : TYPE numpy array.
+        gradient_vector : numpy.array.
             Gradient of the vector along which 'function' is measured.
-        origin : TYPE numpy array, optional
+        origin : numpy.array, optional
             Origin of the vector along which 'function' is measured.
             The default is np.array([0, 0]).
-        radial_limit : TYPE float, optional
-            The maximum radial value that 'function' is to be measured at.
-            The default is 1.0.
+        radial_limit : float, optional
+            The maximum radial distance from the origin that 'function' is to
+            be measured at. The default is 1.0.
 
         Returns
         -------
-        TYPE numpy array.
-            An array containing the values of 'function' along
-            'Y = gradient_vector*X + origin'.
+        numpy.array.
+            An array containing the values of 'function' along the path Y.
 
         '''
+
         if len(gradient_vector) != self.mesh_dimension or \
                 len(origin) != self.mesh_dimension:
             print("Vectors given have the wrong dimesion.")
@@ -605,21 +721,20 @@ class FieldSolver(object):
     def plot_residual_slice(self, gradient_vector, origin=np.array([0, 0]),
                             radial_limit=1.0):
         '''
-        Plots the residual and its components along the line defined by the
-        argument vectors according to 'Y = gradient_vector*X + origin'.
+        Plots the strong residual and its components along the vector path
+        defined by (Y = 'gradient_vector'*X + 'origin').
 
         Parameters
         ----------
-        gradient_vector : TYPE numpy array.
-            DESCRIPTION.
-            Gradient of the vector along which the residual and its components
-            are measured.
-        origin : TYPE numpy array, optional
-            DESCRIPTION. The default is np.array([0, 0]).
-            Origin of the vector along which the residual and its components
-            are measured.
-        radial_limit : TYPE float, optional
-            The maximum radial value that each function is to be measured at.
+        gradient_vector : numpy.array.
+            Gradient of the vector along which the strong residual and its
+            components are measured.
+        origin : numpy.array, optional
+            Origin of the vector along which the strong residual and its
+            components are measured. The default is np.array([0, 0]).
+        radial_limit : float, optional
+            The maximum radial distance from the origin that the strong
+            residual and its components are to be measured at.
             The default is 1.0.
 
         Returns
@@ -627,6 +742,7 @@ class FieldSolver(object):
         None.
 
         '''
+
         # Get field values for each part of the equation of motion.
         if self.residual is None:
             self.calc_field_residual()
@@ -634,18 +750,20 @@ class FieldSolver(object):
         if self.laplacian is None:
             self.calc_laplacian()
 
-        if self.d_potential is None:
-            self.calc_d_potential()
+        if self.potential_derivative is None:
+            self.calc_potential_derivative()
 
-        p_func = d.interpolate(self.p, self.V)
+        if self.p_field is None:
+            self.calc_density_field()
 
         res_value = self.probe_function(self.residual, gradient_vector,
                                         origin, radial_limit)
         lapl_value = self.probe_function(self.laplacian, gradient_vector,
                                          origin, radial_limit)
-        dpot_value = self.probe_function(self.d_potential, gradient_vector,
+        dpot_value = self.probe_function(self.potential_derivative,
+                                         gradient_vector,
                                          origin, radial_limit)
-        p_value = self.probe_function(p_func, gradient_vector,
+        p_value = self.probe_function(self.p_field, gradient_vector,
                                       origin, radial_limit)
 
         # Get distence from origin of where each measurment was taken.
@@ -654,12 +772,12 @@ class FieldSolver(object):
         s = np.linspace(0, N-1, N)
         s *= ds
 
-        plt.figure()
+        plt.figure(figsize=[5.8, 4.0], dpi=150)
         plt.title("Residual Components Vs Displacement Along Given Vector")
         plt.xlim([0, max(s)])
         plt.yscale("log")
-        plt.xlabel("x")
-        plt.plot(s, abs(res_value), label=r"$\left|\varepsilon\right|$")
+        plt.xlabel(r"$\hat{x}$")
+        plt.plot(s, abs(res_value), label=r"$\left|\hat{\varepsilon}\right|$")
         plt.plot(s, self.alpha*abs(lapl_value),
                  label=r"$\alpha \left|\nabla^2 \hat{\phi}\right|$")
         plt.plot(s, abs(dpot_value), label=r"$\hat{\phi}^{-(n+1)}$")
@@ -669,6 +787,27 @@ class FieldSolver(object):
         return None
 
     def save(self, filename, auto_override=False):
+        '''
+        Save calculated field properties as .h5 files in a directory named
+        'Saved Solutions/filename'. If directory 'Saved Solutions' does not
+        exist then it will be created in working directory.
+
+        Parameters
+        ----------
+        filename : str
+            Name of directory that contains the saved files.
+        auto_override : bool, optional
+            If True, will automatically overwrite any existing directory with
+            the same name as 'filename'. If False and directory 'filename'
+            already exists then the user will be asked if they want to
+            overwrite the old directory.
+
+        Returns
+        -------
+        None.
+
+        '''
+
         path = "Saved Solutions/" + filename
         try:
             os.makedirs(path)
@@ -706,19 +845,38 @@ class FieldSolver(object):
                             path + "/laplacian.h5", "w") as f:
                 f.write(self.laplacian, "laplacian")
 
-        if self.d_potential is not None:
+        if self.potential_derivative is not None:
             with d.HDF5File(self.mesh.mpi_comm(),
-                            path + "/d_potential.h5", "w") as f:
-                f.write(self.d_potential, "d_potential")
+                            path + "/potential_derivative.h5", "w") as f:
+                f.write(self.potential_derivative, "potential_derivative")
 
         if self.field_grad is not None:
             with d.HDF5File(self.mesh.mpi_comm(),
                             path + "/field_grad.h5", "w") as f:
                 f.write(self.field_grad, "field_grad")
 
+        if self.p_field is not None:
+            with d.HDF5File(self.mesh.mpi_comm(),
+                            path + "/p_field.h5", "w") as f:
+                f.write(self.p_field, "p_field")
+
         return None
 
     def load(self, filename):
+        '''
+        Loads field properties from directory named 'Saved Solutions/filename'.
+
+        Parameters
+        ----------
+        filename : str
+            Name of directory from which field properties will be loaded from.
+
+        Returns
+        -------
+        None.
+
+        '''
+
         path = "Saved Solutions/" + filename
 
         # Load solution
@@ -746,16 +904,22 @@ class FieldSolver(object):
                             path + "/laplacian.h5", "r") as f:
                 f.read(self.laplacian, "laplacian")
 
-        if os.path.exists(path + "/d_potential.h5"):
-            self.d_potential = d.Function(self.V)
+        if os.path.exists(path + "/potential_derivative.h5"):
+            self.potential_derivative = d.Function(self.V)
             with d.HDF5File(self.mesh.mpi_comm(),
-                            path + "/d_potential.h5", "r") as f:
-                f.read(self.d_potential, "d_potential")
+                            path + "/potential_derivative.h5", "r") as f:
+                f.read(self.potential_derivative, "potential_derivative")
 
         if os.path.exists(path + "/field_grad.h5"):
             self.field_grad = d.Function(self.V_vector)
             with d.HDF5File(self.mesh.mpi_comm(),
                             path + "/field_grad.h5", "r") as f:
                 f.read(self.field_grad, "field_grad")
+
+        if os.path.exists(path + "/p_field.h5"):
+            self.p_field = d.Function(self.V)
+            with d.HDF5File(self.mesh.mpi_comm(),
+                            path + "/p_field.h5", "r") as f:
+                f.read(self.p_field, "p_field")
 
         return None

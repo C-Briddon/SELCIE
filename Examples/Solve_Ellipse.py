@@ -3,14 +3,11 @@
 """
 Created on Thu Jun 17 08:29:06 2021
 
-@author: ppycb3
+@author: Chad Briddon
 
-Environment - fenics2019
-
-Solve the chameleon field around an ellipse and compare to the approximate
-analytic solution.
+Solve the chameleon field around an ellipse inside a vacuum chamber and
+compare the results to the approximate analytic solution.
 """
-import dolfin as d
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -55,19 +52,21 @@ Xi0 = 1.01
 r0 = 0.005
 a = r0/((Xi0*(Xi0**2 - 1))**(1/3))
 
-filename = "../Saved Meshes/Ellipse_in_Vacuum_r%f_Xi%f" % (r0, Xi0)
+filename = "Ellipse_in_Vacuum_r%f_Xi%f" % (r0, Xi0)
 
 
 # Define the density profile of the mesh using its subdomains.
 p = DensityProfile(filename=filename, dimension=2,
                    symmetry='horizontal axis-symmetry',
-                   profiles=[source_wall, vacuum, source_wall], degree=0)
+                   profiles=[source_wall, vacuum, source_wall])
 
 
 # Setup problem.
 alpha = 1.0e3
 n = 1
+
 s = FieldSolver(alpha, n, density_profile=p)
+
 
 # Set tolerance on field solutions and solve for above problems.
 s.picard()
@@ -95,7 +94,11 @@ for eta in Eta:
     for x_i, z_i in zip(x, z):
         calculated_field_ellipse[-1].append(s.field(z_i, x_i))
 
-plt.figure()
+plt.rc('axes', titlesize=10)        # fontsize of the axes title
+plt.rc('axes', labelsize=14)        # fontsize of the x and y labels
+plt.rc('legend', fontsize=13)       # legend fontsize
+
+plt.figure(figsize=[5.8, 4.0], dpi=150)
 plt.title(r'$\xi_0$ = %.2f & $\alpha$ = %.e' % (Xi0, alpha))
 plt.ylabel(r"$\hat{\phi}$")
 plt.xlabel(r"$\xi$")
@@ -133,16 +136,17 @@ plt.legend()
 
 # Get fifth force measure.
 s.calc_field_grad_mag()
-field_grad, probe_point = s.measure_fifth_force(boundary_distance=0.01,
+field_grad, probe_point = s.measure_fifth_force(subdomain=1,
+                                                boundary_distance=0.01,
                                                 tol=1e-4)
 
-s.plot_results(field_scale='linear')
-plt.plot(probe_point.x(), probe_point.y(), 'rx')
+s.plot_results(grad_scale='linear')
+plt.plot(probe_point[0], probe_point[1], 'rx')
 plt.ylim([-0.05, 0.05])
 plt.xlim([-0.05, 0.05])
 
 
 # Add marker to plot indicating location of maximum fifth force.
-plt.plot(probe_point.x(), probe_point.y(), 'rx')
+plt.plot(probe_point[0], probe_point[1], 'rx')
 print('Maximum field gradient is %f and is at position (%f, %f).'
-      % (field_grad, probe_point.x(), probe_point.y()))
+      % (field_grad, probe_point[0], probe_point[1]))

@@ -3,9 +3,10 @@
 """
 Created on Tue Jun  8 20:00:59 2021
 
-@author: ppycb3
+@author: Chad Briddon
 
-Example solving the chamelon field for an empty vacuum chamber.
+Example solving the chamelon field for an empty vacuum chamber for a range of
+alpha values to test the alpha dependence of the field.
 """
 import numpy as np
 import matplotlib.pyplot as plt
@@ -33,9 +34,9 @@ alpha = [1e6, 1e12, 1e18]
 
 
 # Define the density profile of the mesh using its subdomains.
-p = DensityProfile(filename="../Saved Meshes/Circle_Empty_Vacuum_chamber",
+p = DensityProfile(filename="Circle_Empty_Vacuum_chamber",
                    dimension=2, symmetry='vertical axis-symmetry',
-                   profiles=[vacuum, source_wall], degree=0)
+                   profiles=[vacuum, source_wall])
 
 
 # Plot rescaled field for range of alpha values.
@@ -43,10 +44,14 @@ dx = 0.01
 R_max = 1.1 - 1e-4
 
 phi_0 = []
-lbs = ['r-', 'k--', 'c.']
+lbs = ['r--', 'g--', 'k--']
 
-plt.figure()
-plt.ylabel(r"$\hat{\phi}$")
+plt.rc('axes', titlesize=10)        # fontsize of the axes title
+plt.rc('axes', labelsize=14)        # fontsize of the x and y labels
+plt.rc('legend', fontsize=13)       # legend fontsize
+
+plt.figure(figsize=[5.8, 4.0], dpi=150)
+plt.ylabel(r"$\hat{\varphi}$")
 plt.xlabel(r"$\hat{r}$")
 
 for i, a in enumerate(alpha):
@@ -68,7 +73,7 @@ for i, a in enumerate(alpha):
         rescaled_field = pow(s.alpha, 1/(s.n+2))*calculated_field
 
         plt.plot(X, rescaled_field, lbs[i],
-                 label=r"$\alpha $ = {:e}".format(a),
+                 label=r"$\alpha = 10^{%i}$" % int(np.log10(a)),
                  linewidth=1, markersize=3)
 
     phi_0.append(pow(s.alpha, 1/(s.n+2))*s.field(0.0, 0.0))
@@ -78,22 +83,5 @@ handles, labels = plt.gca().get_legend_handles_labels()
 by_label = dict(zip(labels, handles))
 plt.legend(by_label.values(), by_label.keys())
 
+# Print rescaled field values at centre of the chamber.
 print(phi_0)
-
-
-# Make image of subdomains.
-G = 1.15
-
-fig = plt.figure(figsize=(6, 4))
-
-ax_pos_0 = [0.10, 0.10, 0.85, 0.85]
-ax_pos_1 = [0.55, 0.65, 0.25, 0.25]
-
-ax0 = fig.add_axes(ax_pos_0)
-plt.ylim([-G, G])
-plt.xlim([-G, G])
-plt.ylabel('Y')
-plt.xlabel('X')
-d.plot(p.subdomains)
-
-plt.show()
