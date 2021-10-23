@@ -1,1 +1,3 @@
 # SELCIE
+
+SELCIE (Screening Equations Linearly Constructed and Iteratively Evaluated) is a software package that provides the user with tools to investigate nonlinear scalar field models such as the symmetron and chameleon in user defined systems such as an irregularly shaped source inside a vacuum chamber, galaxy clusters, etc. To accomplish this SELCIE uses a nonlinear solving method (either the Picard or Newton method) with the finite element method (FEM) via the software package FEniCS. SELCIE also employes the GMSH software to allow users to construct custom meshes which can then be used to solve the chameleon field.
