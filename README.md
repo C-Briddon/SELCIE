@@ -6,3 +6,11 @@ SELCIE (Screening Equations Linearly Constructed and Iteratively Evaluated) is a
 
 
 ## Requirements
+  - python 3.8
+  - fenics 2019.1.0
+  - meshio 4.3.8
+  - gmsh 4.8.3
+  - matplotlib
+  - astropy
+  - numpy
+  - scipy
