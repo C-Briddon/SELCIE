@@ -9,7 +9,7 @@ Generate mesh for NFW galexy cluster profile with a core region.
 """
 import sys
 sys.path.append("..")
-from Main.MeshingTools import MeshingTools
+from SELCIE.MeshingTools import MeshingTools
 
 # Define Cutoff and Domain radius.
 r_cutoff = 1e-6

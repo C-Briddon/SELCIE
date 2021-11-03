@@ -12,7 +12,7 @@ import numpy as np
 
 import sys
 sys.path.append("..")
-from Main.MeshingTools import MeshingTools
+from SELCIE.MeshingTools import MeshingTools
 
 
 def legendre_coef(k, q, odd_or_even):

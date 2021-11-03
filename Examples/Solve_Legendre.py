@@ -15,10 +15,10 @@ import matplotlib.pyplot as plt
 
 import sys
 sys.path.append("..")
-from Main.MeshingTools import MeshingTools
-from Main.SolverChameleon import FieldSolver
-from Main.DensityProfiles import DensityProfile
-from Main.Misc import conv_fifth_force_chameleon, alpha_calculator_chameleon
+from SELCIE.MeshingTools import MeshingTools
+from SELCIE.SolverChameleon import FieldSolver
+from SELCIE.DensityProfiles import DensityProfile
+from SELCIE.Misc import conv_fifth_force_chameleon, alpha_calculator_chameleon
 
 
 # Define density profile functions.

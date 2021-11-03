@@ -10,7 +10,7 @@ source inside an empty vacuum.
 """
 import sys
 sys.path.append("..")
-from Main.MeshingTools import MeshingTools
+from SELCIE.MeshingTools import MeshingTools
 
 # Choose source and vacuum radial sizes.
 r_inner = 0.05

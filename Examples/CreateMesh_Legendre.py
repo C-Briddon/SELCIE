@@ -13,7 +13,7 @@ from Tools_Legendre import construct_legendre_mesh_2D
 
 import sys
 sys.path.append("..")
-from Main.MeshingTools import MeshingTools
+from SELCIE.MeshingTools import MeshingTools
 
 # Give input coeficents that define the Legendre polynomial shape.
 a_coef = np.array([0.82, 0.02, 0.85, 3.94])/15

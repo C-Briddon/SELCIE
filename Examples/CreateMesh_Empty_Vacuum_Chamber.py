@@ -10,7 +10,7 @@ with a radial size of unity.
 """
 import sys
 sys.path.append("..")
-from Main.MeshingTools import MeshingTools
+from SELCIE.MeshingTools import MeshingTools
 
 # Choose source and vacuum radial sizes.
 r = 1.0

@@ -14,9 +14,9 @@ import dolfin as d
 
 import sys
 sys.path.append("..")
-from Main.MeshingTools import MeshingTools
-from Main.SolverChameleon import FieldSolver
-from Main.DensityProfiles import DensityProfile
+from SELCIE.MeshingTools import MeshingTools
+from SELCIE.SolverChameleon import FieldSolver
+from SELCIE.DensityProfiles import DensityProfile
 
 
 # Define density profile functions.

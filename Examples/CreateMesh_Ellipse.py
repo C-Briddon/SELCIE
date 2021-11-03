@@ -12,7 +12,7 @@ import numpy as np
 
 import sys
 sys.path.append("..")
-from Main.MeshingTools import MeshingTools
+from SELCIE.MeshingTools import MeshingTools
 
 # Choose source and vacuum radial sizes.
 Xi = 1.01
