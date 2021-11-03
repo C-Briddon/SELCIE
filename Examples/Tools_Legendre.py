@@ -179,10 +179,13 @@ def construct_legendre_mesh_2D(MT, a_coef, angle=2*np.pi, N=100,
     for shape in shapes_neg:
         NegDimTags.append(MT.points_to_surface(points_list=shape))
 
-    if include_holes:
-        SurfaceDimTags = MT.non_intersect_shapes(PosDimTags, NegDimTags)
+    if PosDimTags and NegDimTags:
+        if include_holes:
+            SurfaceDimTags = MT.non_intersect_shapes(PosDimTags, NegDimTags)
+        else:
+            SurfaceDimTags = MT.add_shapes(PosDimTags, NegDimTags)
     else:
-        SurfaceDimTags = MT.add_shapes(PosDimTags, NegDimTags)
+        SurfaceDimTags = PosDimTags + NegDimTags
 
     return SurfaceDimTags
 
