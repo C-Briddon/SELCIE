@@ -12,11 +12,8 @@ import numpy as np
 import dolfin as d
 import matplotlib.pyplot as plt
 
-import sys
-sys.path.append("..")
-from SELCIE.MeshingTools import MeshingTools
-from SELCIE.SolverChameleon import FieldSolver
-from SELCIE.DensityProfiles import DensityProfile
+from SELCIE import FieldSolver
+from SELCIE import DensityProfile
 
 
 # Define density profile functions.

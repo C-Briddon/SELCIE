@@ -7,9 +7,7 @@ Created on Tue Jun 29 12:39:11 2021
 
 Example of creating a mesh using MeshingTools functions to construct shapes.
 """
-import sys
-sys.path.append("..")
-from SELCIE.MeshingTools import MeshingTools
+from SELCIE import MeshingTools
 
 # Construct mesh.
 MT = MeshingTools(dimension=2)

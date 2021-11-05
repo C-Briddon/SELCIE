@@ -8,9 +8,7 @@ Created on Tue Jun  8 14:28:23 2021
 Example of creating a mesh. In this example the mesh is an empty vacuum chamber
 with a radial size of unity.
 """
-import sys
-sys.path.append("..")
-from SELCIE.MeshingTools import MeshingTools
+from SELCIE import MeshingTools
 
 # Choose source and vacuum radial sizes.
 r = 1.0

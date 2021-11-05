@@ -13,11 +13,8 @@ import numpy as np
 from astropy import units
 import matplotlib.pyplot as plt
 
-import sys
-sys.path.append("..")
-from SELCIE.MeshingTools import MeshingTools
-from SELCIE.SolverChameleon import FieldSolver
-from SELCIE.DensityProfiles import DensityProfile
+from SELCIE import FieldSolver
+from SELCIE import DensityProfile
 from SELCIE.Misc import conv_fifth_force_chameleon, alpha_calculator_chameleon
 
 
@@ -50,8 +47,6 @@ a_coef = np.array([0.82, 0.02, 0.85, 3.94])/15
 
 
 # Import mesh and setup density field.
-MT = MeshingTools(dimension=2)
-
 p = DensityProfile(filename="Legndre" + str(a_coef),
                    dimension=2, symmetry='vertical axis-symmetry',
                    profiles=[source_wall, vacuum, source_wall])

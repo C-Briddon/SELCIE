@@ -10,11 +10,8 @@ Code to solve the chameleon field for the NFW density profile.
 import numpy as np
 import matplotlib.pyplot as plt
 
-import sys
-sys.path.append("..")
-from SELCIE.MeshingTools import MeshingTools
-from SELCIE.SolverChameleon import FieldSolver
-from SELCIE.DensityProfiles import DensityProfile
+from SELCIE import FieldSolver
+from SELCIE import DensityProfile
 
 
 # Define functions for analytic solution.
@@ -67,8 +64,6 @@ alpha = [1e-9, 1e+9]
 
 
 # Import mesh and convert from .msh to .xdmf.
-MT = MeshingTools(dimension=2)
-
 p = DensityProfile(filename="NFW_Galaxy", dimension=2,
                    symmetry='vertical axis-symmetry',
                    profiles=[core, NFW_profile, NFW_profile])

@@ -10,13 +10,9 @@ alpha values to test the alpha dependence of the field.
 """
 import numpy as np
 import matplotlib.pyplot as plt
-import dolfin as d
 
-import sys
-sys.path.append("..")
-from SELCIE.MeshingTools import MeshingTools
-from SELCIE.SolverChameleon import FieldSolver
-from SELCIE.DensityProfiles import DensityProfile
+from SELCIE import FieldSolver
+from SELCIE import DensityProfile
 
 
 # Define density profile functions.

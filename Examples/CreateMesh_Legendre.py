@@ -9,11 +9,8 @@ Create mesh for a Legndre polynomial shape inside a vacuum chamber of radial
 size unity.
 """
 import numpy as np
+from SELCIE import MeshingTools
 from Tools_Legendre import construct_legendre_mesh_2D
-
-import sys
-sys.path.append("..")
-from SELCIE.MeshingTools import MeshingTools
 
 # Give input coeficents that define the Legendre polynomial shape.
 a_coef = np.array([0.82, 0.02, 0.85, 3.94])/15

@@ -8,9 +8,7 @@ Created on Tue Jul 20 13:51:59 2021
 Example of creating a 3D mesh. In this example the mesh is a torus shaped
 source inside an empty vacuum.
 """
-import sys
-sys.path.append("..")
-from SELCIE.MeshingTools import MeshingTools
+from SELCIE import MeshingTools
 
 # Choose source and vacuum radial sizes.
 r_inner = 0.05

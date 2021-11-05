@@ -8,9 +8,7 @@ Created on Mon Jun  7 13:49:00 2021
 Example of creating a mesh. In this example the mesh is a circular source
 inside an empty vacuum.
 """
-import sys
-sys.path.append("..")
-from SELCIE.MeshingTools import MeshingTools
+from SELCIE import MeshingTools
 
 # Choose source and vacuum radial sizes.
 r_s = 0.005

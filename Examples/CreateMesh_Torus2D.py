@@ -8,9 +8,7 @@ Created on Tue Jul 20 10:13:23 2021
 Example of creating a 2D mesh. In this example the mesh is a torus shaped
 source inside an empty vacuum.
 """
-import sys
-sys.path.append("..")
-from SELCIE.MeshingTools import MeshingTools
+from SELCIE import MeshingTools
 
 # Choose source and vacuum radial sizes.
 r_inner = 0.05
@@ -29,7 +27,7 @@ MT.translate_x(c1, dx)
 c2 = MT.create_ellipse(rx=r_t, ry=r_t)
 MT.translate_x(c2, -dx)
 
-MT.create_subdomain(CellSizeMin=10e-4, CellSizeMax=0.05, DistMax=0.1)
+MT.create_subdomain(CellSizeMin=1e-4, CellSizeMax=0.05, DistMax=0.1)
 
 MT.create_background_mesh(CellSizeMin=1e-4, CellSizeMax=0.05, DistMax=0.1,
                           background_radius=r_v, wall_thickness=0.05)

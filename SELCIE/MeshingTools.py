@@ -345,6 +345,7 @@ class MeshingTools():
 
         '''
 
+        self.create_subdomain()
         self.geom.synchronize()
 
         # If no refinement settings have been imputted then use default.
@@ -400,11 +401,11 @@ class MeshingTools():
         # Generate mesh.
         gmsh.model.mesh.generate(dim=self.dim)
 
-        # If Saved Meshes directory not found create one.
-        if os.path.isdir('Saved Meshes') is False:
-            os.makedirs('Saved Meshes')
-
         if filename is not None:
+            # If Saved Meshes directory not found create one.
+            if os.path.isdir('Saved Meshes') is False:
+                os.makedirs('Saved Meshes')
+
             gmsh.write(fileName="Saved Meshes/" + filename+".msh")
 
         if show_mesh is True:

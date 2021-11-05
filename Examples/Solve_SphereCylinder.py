@@ -13,11 +13,8 @@ import dolfin as d
 from scipy.special import kn
 import matplotlib.pyplot as plt
 
-import sys
-sys.path.append("..")
-from SELCIE.MeshingTools import MeshingTools
-from SELCIE.SolverChameleon import FieldSolver
-from SELCIE.DensityProfiles import DensityProfile
+from SELCIE import FieldSolver
+from SELCIE import DensityProfile
 
 
 # Analytic solutions.
@@ -63,24 +60,19 @@ def vacuum(x):
     return 1.0
 
 
-# Import mesh and convert from .msh to .xdmf.
-R = 0.005
-MT = MeshingTools(dimension=2)
-filename = "Circle_in_Vacuum_r" + str(R)
-
-
 # Set model parameters.
 n = 1
 alpha = 0.1
+R = 0.005
 
 
 # Define the density profile of the mesh using its subdomains.
-p_sphere = DensityProfile(filename=filename, dimension=2,
-                          symmetry='vertical axis-symmetry',
+p_sphere = DensityProfile(filename="Circle_in_Vacuum_r" + str(R),
+                          dimension=2, symmetry='vertical axis-symmetry',
                           profiles=[source_wall, vacuum, vacuum])
 
-p_cylinder = DensityProfile(filename=filename, dimension=2,
-                            symmetry='cylinder slice',
+p_cylinder = DensityProfile(filename="Circle_in_Vacuum_r" + str(R),
+                            dimension=2, symmetry='cylinder slice',
                             profiles=[source_wall, vacuum, vacuum])
 
 

@@ -9,10 +9,7 @@ Example of creating a mesh. In this example the mesh is an ellipical source
 inside an empty vacuum.
 """
 import numpy as np
-
-import sys
-sys.path.append("..")
-from SELCIE.MeshingTools import MeshingTools
+from SELCIE import MeshingTools
 
 # Choose source and vacuum radial sizes.
 Xi = 1.01

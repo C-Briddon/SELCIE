@@ -13,7 +13,7 @@ chameleon scalar field model is user defined systems.
 '''
 
 setup(name='SELCIE',
-      version='1.0',
+      version='1.0.1',
       description=message,
       url='https://github.com/C-Briddon/SELCIE',
       author='Chad Briddon',

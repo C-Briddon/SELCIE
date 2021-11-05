@@ -9,10 +9,7 @@ Functions for generating Legendre polynomial shapes for testing solvers.
 """
 import math
 import numpy as np
-
-import sys
-sys.path.append("..")
-from SELCIE.MeshingTools import MeshingTools
+from SELCIE import MeshingTools
 
 
 def legendre_coef(k, q, odd_or_even):
