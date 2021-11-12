@@ -21,7 +21,7 @@ In future versions of SELCIE we plan to generalize the methodology so that the u
 
 ## Citation
 If you use SELCIE in your research please include the following citation:
-
+'''
 @article{Briddon:2021etm,
     author = "Briddon, Chad and Burrage, Clare and Moss, Adam and Tamosiunas, Andrius",
     title = "{SELCIE: A tool for investigating the chameleon field of arbitrary sources}",
@@ -31,3 +31,4 @@ If you use SELCIE in your research please include the following citation:
     month = "10",
     year = "2021"
 }
+'''
