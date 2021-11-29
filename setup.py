@@ -7,14 +7,9 @@ Created on Wed Nov  3 12:09:25 2021
 """
 from setuptools import setup
 
-message = '''
-A package utalising mesh generating and finite element softwares to solve the
-chameleon scalar field model is user defined systems.
-'''
-
 setup(name='SELCIE',
       version='1.0.1',
-      description=message,
+      description="A package utalising mesh generating and finite element softwares to solve the chameleon scalar field model in user defined systems.",
       url='https://github.com/C-Briddon/SELCIE',
       author='Chad Briddon',
       author_email='chad.briddon@gmail.com',
