@@ -9,9 +9,11 @@ Tools to produce and modify meshes to be used in simulations.
 """
 import os
 import sys
+import math
 import gmsh
 import meshio
 import numpy as np
+from SELCIE.Misc import legendre_R
 
 
 class MeshingTools():
@@ -43,15 +45,57 @@ class MeshingTools():
 
         return None
 
+    def constrain_distance(self, points_list):
+        '''
+        Removes points from list so that the distance between neighbouring
+        points is greater than the minimum gmsh line length. Is performd such
+        that the last point in the list will not be removed.
+
+        Parameters
+        ----------
+        points_list : list of list
+            List containing the points. Each element of the list is a list
+            containing the x, y, and z coordinate of the point it represents.
+
+        Returns
+        -------
+        points_new : list of list
+            Copy of inputted list with points removed so that all neighbouring
+            points are seperated by the minimum allowed distance.
+
+        '''
+
+        index = []
+        p_pre = points_list[-1]
+        for p in points_list[:-1]:
+            if math.dist(p, p_pre) < self.Min_length:
+                index.append(False)
+            else:
+                index.append(True)
+                p_pre = p
+
+        points_new = [q for q, I in zip(points_list, index) if I]
+
+        # Reinclude last point from original list.
+        if len(points_new) > 0:
+            if math.dist(points_list[-1], points_new[-1]) < self.Min_length:
+                points_new[-1] = points_list[-1]
+            else:
+                points_new.append(points_list[-1])
+        else:
+            points_new.append(points_list[-1])
+
+        return points_new
+
     def points_to_surface(self, points_list):
         '''
         Generates closed surface whose boundary is defined by a list of points.
 
         Parameters
         ----------
-        points_list : list of tuple
+        points_list : list of list
             List containing the points which define the exterior of the
-            surface. Each element of the list is a tuple containing the x, y,
+            surface. Each element of the list is a list containing the x, y,
             and z coordinate of the point it represents.
 
         Returns
@@ -88,10 +132,10 @@ class MeshingTools():
 
         Parameters
         ----------
-        contour_list : list of list of tuple
+        contour_list : list of list of list
             List containing the contours which define the exterior of the
             volume. The contours are themselves a list whose elements are
-            tuples, each containing the x, y, and z coordinate of the point
+            lists, each containing the x, y, and z coordinate of the point
             it represents.
 
         Returns
@@ -994,3 +1038,108 @@ class MeshingTools():
                                         r2=R_tube))]
 
         return torus
+
+    def legendre_shape_components(self, a_coef, angle=2*np.pi, N=100):
+        '''
+        Generate lists of points that outline segments of the Legendre
+        polynomial shape.
+
+        Parameters
+        ----------
+        a_coef : list of float
+            Coefficients of the Legendre series.
+        angle : float, optional
+            Angular amount the shape covers in radians. The default is 2*np.pi.
+        N : int, optional
+            Total number of points. The default is 100.
+
+        Returns
+        -------
+        shapes_pos : list of list of list
+            Each list in shapes_pos contains lists representing a point with a
+            positive radial value from the Legendre series. The elements of the
+            lists are the x, y, and z coordinates of the point.
+        shapes_neg : list of list of list
+            Each list in shapes_neg contains lists representing a point with a
+            negative radial value from the Legendre series. The elements of the
+            lists are the x, y, and z coordinates of the point.
+
+        '''
+
+        theta = np.linspace(0, angle, N, endpoint=False)
+        R = legendre_R(theta, a_coef)
+        dR = np.diff(R, append=R[0])
+
+        # Group x, y, and z components of each point and split curve.
+        split = (R*(R + dR) < 0.0)
+
+        curves = np.array(list(zip(R*np.sin(theta),
+                                   R*np.cos(theta),
+                                   np.zeros(len(R)))))
+
+        shapes_holes = [ar.tolist() for ar in
+                        np.array_split(curves, np.where(split)[0]+1)]
+
+        # Join first and last lines to complete segment.
+        if len(shapes_holes) > 1:
+            shapes_holes[-1] += shapes_holes.pop(0)
+            for sh in shapes_holes:
+                sh.append([0.0, 0.0, 0.0])
+
+        # Apply distance constraint to each shape.
+        for i, sh in enumerate(shapes_holes):
+            shapes_holes[i] = self.constrain_distance(sh)
+
+        # Create lists for segments with positive and negative R.
+        shapes_pos = [sh for sh in shapes_holes[::2] if len(sh) > 2]
+        shapes_neg = [sh for sh in shapes_holes[1::2] if len(sh) > 2]
+
+        return shapes_pos, shapes_neg
+
+    def construct_legendre_mesh_2D(self, a_coef, angle=2*np.pi, N=100,
+                                   include_holes=True):
+        '''
+        Generate a 2D shape constructed using a Legendre series.
+
+        Parameters
+        ----------
+        a_coef : list of float
+            Coefficients of the Legendre series.
+        angle : float, optional
+            Angular amount the shape covers in radians. The default is 2*np.pi.
+        N : int, optional
+            Total number of points. The default is 100.
+        include_holes : bool, optional
+            If True will remove intersections of regions with posative and
+            negative radius from shape. Otherwise the shapes are merged so
+            they have no holes. The default is True.
+
+        Returns
+        -------
+        SurfaceDimTag : tuple
+            Tuple containing the dimension and tag of the generated surface.
+
+        '''
+
+        shapes_pos, shapes_neg = self.legendre_shape_components(a_coef,
+                                                                angle, N)
+
+        PosDimTags = []
+        NegDimTags = []
+
+        for shape in shapes_pos:
+            PosDimTags.append(self.points_to_surface(points_list=shape))
+
+        for shape in shapes_neg:
+            NegDimTags.append(self.points_to_surface(points_list=shape))
+
+        if PosDimTags and NegDimTags:
+            if include_holes:
+                SurfaceDimTags = self.non_intersect_shapes(PosDimTags,
+                                                           NegDimTags)
+            else:
+                SurfaceDimTags = self.add_shapes(PosDimTags, NegDimTags)
+        else:
+            SurfaceDimTags = PosDimTags + NegDimTags
+
+        return SurfaceDimTags

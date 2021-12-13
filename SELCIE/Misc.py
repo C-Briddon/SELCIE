@@ -7,6 +7,8 @@ Created on Fri Aug 27 10:08:36 2021
 
 Code containing miscellaneous functions for aiding the user.
 """
+import math
+import numpy as np
 from astropy import units, constants
 
 
@@ -203,3 +205,79 @@ def conv_fifth_force_chameleon(n, M, Lam, p0, L, g=9.80665,
     conv_grad_to_ff = Lam*pow(n*M*(Lam**3)/p0, 1/(n+1))/(M*L*g)
 
     return conv_grad_to_ff
+
+
+def legendre_coef(k, q, odd_or_even):
+    '''
+    Returns coefficient of polynomial that is derived from Legendre series.
+
+    Parameters
+    ----------
+    k : int
+        Coefficient is for kth term in polynomial.
+    q : int
+        If number of Legendre coefficients, N, is even N=2*q. For odd N,
+        N=2*q+1.
+    odd_or_even : {'odd', 'even'}
+        State if number of Legendre coefficients, N, is odd or even.
+
+    Returns
+    -------
+    float
+        Polynomial coefficient for given k and q for Legendre series.
+
+    '''
+
+    if q < k:
+        return 0
+
+    else:
+        if odd_or_even == 'even':
+            return pow(-1, q-k)*math.factorial(
+                2*q+2*k)/(pow(4, q) * math.factorial(q-k) *
+                          math.factorial(q+k)*math.factorial(2*k))
+
+        elif odd_or_even == 'odd':
+            return pow(-1, q-k)*math.factorial(
+                2*q+2*k+1)/(pow(4, q) * math.factorial(q-k) *
+                            math.factorial(q+k)*math.factorial(2*k+1))
+
+    return None
+
+
+def legendre_R(theta, a_coef):
+    '''
+    Calculate the radial distance from the origin of Legendre series.
+
+    Parameters
+    ----------
+    theta : float
+        Angular coordinate.
+    a_coef : list of float
+        Coefficients of the Legendre series.
+
+    Returns
+    -------
+    R : float
+        Radial value of Legendre series.
+
+    '''
+
+    N = len(a_coef)
+    if N % 2 == 0:
+        No = int(N/2)
+        Ne = int(N/2)
+    else:
+        No = int((N-1)/2)
+        Ne = int((N+1)/2)
+    R = 0
+    c = np.cos(theta)
+
+    for q in range(Ne):
+        for k in range(q+1):
+            R += a_coef[2*q]*legendre_coef(k, q, 'even')*pow(c, 2*k)
+    for q in range(No):
+        for k in range(q+1):
+            R += a_coef[2*q+1]*legendre_coef(k, q, 'odd')*pow(c, 2*k+1)
+
+    return R

@@ -10,7 +10,6 @@ size unity.
 """
 import numpy as np
 from SELCIE import MeshingTools
-from Tools_Legendre import construct_legendre_mesh_2D
 
 # Give input coeficents that define the Legendre polynomial shape.
 a_coef = np.array([0.82, 0.02, 0.85, 3.94])/15
@@ -24,7 +23,7 @@ filename = "Legndre" + str(a_coef)
 # Create the mesh in gmsh.
 MT = MeshingTools(dimension=2)
 
-construct_legendre_mesh_2D(MT, a_coef, N=1000, include_holes=True)
+MT.construct_legendre_mesh_2D(a_coef, N=1000, include_holes=True)
 
 MT.create_background_mesh(CellSizeMin=1e-4, CellSizeMax=0.1, DistMax=0.4,
                           background_radius=1.0, wall_thickness=0.1)
