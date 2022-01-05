@@ -1,4 +1,5 @@
 Saved Meshes
-Examples/__pycache__
-Main/__pycache__
-Examples/.ipynb_checkpoints
+__pycache__
+build
+*.egg-info
+*.ipynb_checkpoints
