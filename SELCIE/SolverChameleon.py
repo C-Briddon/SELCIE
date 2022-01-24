@@ -525,9 +525,40 @@ class FieldSolver(object):
 
         Returns
         -------
-        None.
+        plot_list : list
+            List containing the generated figures.
 
         '''
+
+        if self.field is None:
+            print("Field must be solved for first.")
+            return None
+
+        plot_list = []
+
+        if field_scale is not None:
+            fig_field = plt.figure(dpi=150)
+            plt.title("Field")
+            plt.ylabel('y')
+            plt.xlabel('x')
+
+            if field_scale.lower() == "linear":
+                img_field = d.plot(self.field)
+                fig_field.colorbar(img_field, label=r"$\hat{\phi}$")
+
+            elif field_scale.lower() == "log":
+                log_field = d.Function(self.V)
+                log_field.vector()[:] = np.log10(abs(self.field.vector()[:])
+                                                 + 1e-14)
+                img_field = d.plot(log_field)
+                fig_field.colorbar(img_field, label=r"$\log_{10}(\hat{\phi})$")
+
+            else:
+                print("")
+                print('"' + field_scale + '"',
+                      "is not a valid argument for field_scale.")
+
+            plot_list.append(fig_field)
 
         if grad_scale is not None:
             if self.field_grad_mag is None:
@@ -557,6 +588,8 @@ class FieldSolver(object):
                 print('"' + grad_scale + '"',
                       "is not a valid argument for grad_scale.")
 
+            plot_list.append(fig_grad)
+
         if res_scale is not None:
             if self.residual is None:
                 self.calc_field_residual()
@@ -582,6 +615,8 @@ class FieldSolver(object):
                 print("")
                 print('"' + res_scale + '"',
                       "is not a valid argument for res_scale.")
+
+            plot_list.append(fig_res)
 
         if lapl_scale is not None:
             if self.laplacian is None:
@@ -611,6 +646,8 @@ class FieldSolver(object):
                 print('"' + lapl_scale + '"',
                       "is not a valid argument for lapl_scale.")
 
+            plot_list.append(fig_lapl)
+
         if dpot_scale is not None:
             if self.potential_derivative is None:
                 self.calc_potential_derivative()
@@ -638,6 +675,8 @@ class FieldSolver(object):
                 print('"' + dpot_scale + '"',
                       "is not a valid argument for dpot_scale.")
 
+            plot_list.append(fig_pot)
+
         if density_scale is not None:
             if self.p_field is None:
                 self.calc_density_field()
@@ -664,7 +703,9 @@ class FieldSolver(object):
                 print('"' + density_scale + '"',
                       "is not a valid argument for density_scale.")
 
-        return None
+            plot_list.append(fig_density)
+
+        return plot_list
 
     def probe_function(self, function, gradient_vector,
                        origin=np.array([0, 0]), radial_limit=1.0):
