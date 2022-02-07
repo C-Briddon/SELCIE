@@ -530,180 +530,183 @@ class FieldSolver(object):
 
         '''
 
-        if self.field is None:
-            print("Field must be solved for first.")
-            return None
-
         plot_list = []
 
         if field_scale is not None:
-            fig_field = plt.figure(dpi=150)
-            plt.title("Field")
-            plt.ylabel('y')
-            plt.xlabel('x')
-
-            if field_scale.lower() == "linear":
-                img_field = d.plot(self.field)
-                fig_field.colorbar(img_field, label=r"$\hat{\phi}$")
-
-            elif field_scale.lower() == "log":
-                log_field = d.Function(self.V)
-                log_field.vector()[:] = np.log10(abs(self.field.vector()[:])
-                                                 + 1e-14)
-                img_field = d.plot(log_field)
-                fig_field.colorbar(img_field, label=r"$\log_{10}(\hat{\phi})$")
-
+            if self.field is None:
+                print("Field must be solved before being plotted.")
             else:
-                print("")
-                print('"' + field_scale + '"',
-                      "is not a valid argument for field_scale.")
+                fig_field = plt.figure(dpi=150)
+                plt.title("Field")
+                plt.ylabel('y')
+                plt.xlabel('x')
 
-            plot_list.append(fig_field)
+                if field_scale.lower() == "linear":
+                    img_field = d.plot(self.field)
+                    fig_field.colorbar(img_field, label=r"$\hat{\phi}$")
+
+                elif field_scale.lower() == "log":
+                    log_field = d.Function(self.V)
+                    log_field.vector()[:] = np.log10(abs(self.field.vector()[:]
+                                                         ) + 1e-14)
+                    img_field = d.plot(log_field)
+                    fig_field.colorbar(img_field,
+                                       label=r"$\log_{10}(\hat{\phi})$")
+
+                else:
+                    print("")
+                    print('"' + field_scale + '"',
+                          "is not a valid argument for field_scale.")
+
+                plot_list.append(fig_field)
 
         if grad_scale is not None:
             if self.field_grad_mag is None:
-                self.calc_field_grad_mag()
-
-            fig_grad = plt.figure(dpi=150)
-            plt.title("Magnitude of Field Gradient")
-            plt.ylabel('y')
-            plt.xlabel('x')
-
-            if grad_scale.lower() == "linear":
-                img_grad = d.plot(self.field_grad_mag)
-                fig_grad.colorbar(img_grad,
-                                  label=r"$|\hat{\nabla} \hat{\phi}|$")
-
-            elif grad_scale.lower() == "log":
-                log_grad = d.Function(self.V)
-                log_grad.vector()[:] = np.log10(
-                    abs(self.field_grad_mag.vector()[:]) + 1e-14)
-                img_grad = d.plot(log_grad)
-                fig_grad.colorbar(
-                    img_grad,
-                    label=r"$\log_{10}(|\hat{\nabla} \hat{\phi}|)$")
-
+                print("Field gradient must be solved before being plotted.")
             else:
-                print("")
-                print('"' + grad_scale + '"',
-                      "is not a valid argument for grad_scale.")
+                fig_grad = plt.figure(dpi=150)
+                plt.title("Magnitude of Field Gradient")
+                plt.ylabel('y')
+                plt.xlabel('x')
 
-            plot_list.append(fig_grad)
+                if grad_scale.lower() == "linear":
+                    img_grad = d.plot(self.field_grad_mag)
+                    fig_grad.colorbar(img_grad,
+                                      label=r"$|\hat{\nabla} \hat{\phi}|$")
+
+                elif grad_scale.lower() == "log":
+                    log_grad = d.Function(self.V)
+                    log_grad.vector()[:] = np.log10(
+                        abs(self.field_grad_mag.vector()[:]) + 1e-14)
+                    img_grad = d.plot(log_grad)
+                    fig_grad.colorbar(
+                        img_grad,
+                        label=r"$\log_{10}(|\hat{\nabla} \hat{\phi}|)$")
+
+                else:
+                    print("")
+                    print('"' + grad_scale + '"',
+                          "is not a valid argument for grad_scale.")
+
+                plot_list.append(fig_grad)
+
 
         if res_scale is not None:
             if self.residual is None:
-                self.calc_field_residual()
-
-            fig_res = plt.figure(dpi=150)
-            plt.title("Field Residual")
-            plt.ylabel('y')
-            plt.xlabel('x')
-
-            if res_scale.lower() == "linear":
-                img_res = d.plot(self.residual)
-                fig_res.colorbar(img_res, label=r"$\hat{\epsilon}$")
-
-            elif res_scale.lower() == "log":
-                log_res = d.Function(self.V)
-                log_res.vector()[:] = np.log10(
-                    abs(self.residual.vector()[:]) + 1e-14)
-                img_res = d.plot(log_res)
-                fig_res.colorbar(img_res,
-                                 label=r"$\log_{10}(|\hat{\epsilon}|)$")
-
+                print("Residual must be solved before being plotted.")
             else:
-                print("")
-                print('"' + res_scale + '"',
-                      "is not a valid argument for res_scale.")
+                fig_res = plt.figure(dpi=150)
+                plt.title("Field Residual")
+                plt.ylabel('y')
+                plt.xlabel('x')
 
-            plot_list.append(fig_res)
+                if res_scale.lower() == "linear":
+                    img_res = d.plot(self.residual)
+                    fig_res.colorbar(img_res, label=r"$\hat{\epsilon}$")
+
+                elif res_scale.lower() == "log":
+                    log_res = d.Function(self.V)
+                    log_res.vector()[:] = np.log10(
+                        abs(self.residual.vector()[:]) + 1e-14)
+                    img_res = d.plot(log_res)
+                    fig_res.colorbar(img_res,
+                                     label=r"$\log_{10}(|\hat{\epsilon}|)$")
+
+                else:
+                    print("")
+                    print('"' + res_scale + '"',
+                          "is not a valid argument for res_scale.")
+
+                plot_list.append(fig_res)
 
         if lapl_scale is not None:
             if self.laplacian is None:
-                self.calc_laplacian()
-
-            fig_lapl = plt.figure()
-            plt.title("Laplacian of Field")
-            plt.ylabel('y')
-            plt.xlabel('x')
-
-            if lapl_scale.lower() == "linear":
-                img_lapl = d.plot(self.laplacian)
-                fig_lapl.colorbar(img_lapl,
-                                  label=r"$\hat{\nabla}^2 \hat{\phi}$")
-
-            elif lapl_scale.lower() == "log":
-                log_lapl = d.Function(self.V)
-                log_lapl.vector()[:] = np.log10(
-                    abs(self.laplacian.vector()[:]) + 1e-14)
-                img_lapl = d.plot(log_lapl)
-                fig_lapl.colorbar(
-                    img_lapl,
-                    label=r"$\log_{10}(|\hat{\nabla}^2\hat{\phi}|)$")
-
+                print("Laplacian must be solved before being plotted.")
             else:
-                print("")
-                print('"' + lapl_scale + '"',
-                      "is not a valid argument for lapl_scale.")
+                fig_lapl = plt.figure()
+                plt.title("Laplacian of Field")
+                plt.ylabel('y')
+                plt.xlabel('x')
 
-            plot_list.append(fig_lapl)
+                if lapl_scale.lower() == "linear":
+                    img_lapl = d.plot(self.laplacian)
+                    fig_lapl.colorbar(img_lapl,
+                                      label=r"$\hat{\nabla}^2 \hat{\phi}$")
+
+                elif lapl_scale.lower() == "log":
+                    log_lapl = d.Function(self.V)
+                    log_lapl.vector()[:] = np.log10(
+                        abs(self.laplacian.vector()[:]) + 1e-14)
+                    img_lapl = d.plot(log_lapl)
+                    fig_lapl.colorbar(
+                        img_lapl,
+                        label=r"$\log_{10}(|\hat{\nabla}^2\hat{\phi}|)$")
+
+                else:
+                    print("")
+                    print('"' + lapl_scale + '"',
+                          "is not a valid argument for lapl_scale.")
+
+                plot_list.append(fig_lapl)
 
         if dpot_scale is not None:
             if self.potential_derivative is None:
-                self.calc_potential_derivative()
-
-            fig_pot = plt.figure()
-            plt.title("Field Potential")
-            plt.ylabel('y')
-            plt.xlabel('x')
-
-            if dpot_scale.lower() == "linear":
-                img_pot = d.plot(self.potential_derivative)
-                fig_pot.colorbar(img_pot,
-                                 label=r"\left|$\hat{V}'(\hat{\phi})\right|$")
-
-            elif dpot_scale.lower() == "log":
-                log_pot = d.Function(self.V)
-                log_pot.vector()[:] = np.log10(
-                    abs(self.potential_derivative.vector()[:]) + 1e-14)
-                img_pot = d.plot(log_pot)
-                fig_pot.colorbar(img_pot,
-                                 label=r"$\log_{10}(|\hat{V}'(\hat{\phi})|)$")
-
+                print(
+                    "Potential derivative must be solved before being plotted."
+                    )
             else:
-                print("")
-                print('"' + dpot_scale + '"',
-                      "is not a valid argument for dpot_scale.")
+                fig_pot = plt.figure()
+                plt.title("Field Potential")
+                plt.ylabel('y')
+                plt.xlabel('x')
 
-            plot_list.append(fig_pot)
+                if dpot_scale.lower() == "linear":
+                    img_pot = d.plot(self.potential_derivative)
+                    fig_pot.colorbar(img_pot,
+                                     label=r"|$\hat{V}'(\hat{\phi})|$")
+
+                elif dpot_scale.lower() == "log":
+                    log_pot = d.Function(self.V)
+                    log_pot.vector()[:] = np.log10(
+                        abs(self.potential_derivative.vector()[:]) + 1e-14)
+                    img_pot = d.plot(log_pot)
+                    fig_pot.colorbar(
+                        img_pot, label=r"$\log_{10}(|\hat{V}'(\hat{\phi})|)$")
+
+                else:
+                    print("")
+                    print('"' + dpot_scale + '"',
+                          "is not a valid argument for dpot_scale.")
+
+                plot_list.append(fig_pot)
 
         if density_scale is not None:
             if self.p_field is None:
-                self.calc_density_field()
-
-            fig_density = plt.figure(dpi=150)
-            plt.title("Density Field")
-            plt.ylabel('y')
-            plt.xlabel('x')
-
-            if density_scale.lower() == "linear":
-                img_density = d.plot(self.p_field, extend='max')
-                fig_density.colorbar(img_density, label=r"$\hat{\rho}$")
-
-            elif density_scale.lower() == "log":
-                log_density = d.Function(self.V)
-                log_density.vector()[:] = np.log10(self.p_field.vector()[:]
-                                                   + 1e-14)
-                img_density = d.plot(log_density, extend='max')
-                fig_density.colorbar(img_density,
-                                     label=r'$\log_{10}(\hat{\rho})$')
-
+                print("Density field must be solved before being plotted.")
             else:
-                print("")
-                print('"' + density_scale + '"',
-                      "is not a valid argument for density_scale.")
+                fig_density = plt.figure(dpi=150)
+                plt.title("Density Field")
+                plt.ylabel('y')
+                plt.xlabel('x')
 
-            plot_list.append(fig_density)
+                if density_scale.lower() == "linear":
+                    img_density = d.plot(self.p_field, extend='max')
+                    fig_density.colorbar(img_density, label=r"$\hat{\rho}$")
+
+                elif density_scale.lower() == "log":
+                    log_density = d.Function(self.V)
+                    log_density.vector()[:] = np.log10(self.p_field.vector()[:]
+                                                       + 1e-14)
+                    img_density = d.plot(log_density, extend='max')
+                    fig_density.colorbar(img_density,
+                                         label=r'$\log_{10}(\hat{\rho})$')
+
+                else:
+                    print("")
+                    print('"' + density_scale + '"',
+                          "is not a valid argument for density_scale.")
+
+                plot_list.append(fig_density)
 
         return plot_list
 
