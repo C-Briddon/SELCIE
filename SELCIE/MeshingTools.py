@@ -1082,16 +1082,16 @@ class MeshingTools():
 
         # Join first and last lines to complete segment.
         if len(shapes_holes) > 1:
-            shapes_holes[-1] += shapes_holes.pop(0)
-            for sh in shapes_holes:
+            for sh in shapes_holes[:-1]:
                 sh.append([0.0, 0.0, 0.0])
+            shapes_holes[0] += shapes_holes.pop(-1)
 
         # Apply distance constraint to each shape.
         for i, sh in enumerate(shapes_holes):
             shapes_holes[i] = self.constrain_distance(sh)
 
         # Create lists for segments with positive and negative R.
-        shapes_pos = [sh for sh in shapes_holes[::2] if len(sh) > 2]
+        shapes_pos = [sh for sh in shapes_holes[0::2] if len(sh) > 2]
         shapes_neg = [sh for sh in shapes_holes[1::2] if len(sh) > 2]
 
         return shapes_pos, shapes_neg
@@ -1116,8 +1116,9 @@ class MeshingTools():
 
         Returns
         -------
-        SurfaceDimTag : tuple
-            Tuple containing the dimension and tag of the generated surface.
+        SurfaceDimTag : list of tuple
+            List containing Tuples which contain the dimension and tag of the
+            generated surface.
 
         '''
 
@@ -1125,21 +1126,20 @@ class MeshingTools():
                                                                 angle, N)
 
         PosDimTags = []
-        NegDimTags = []
-
         for shape in shapes_pos:
             PosDimTags.append(self.points_to_surface(points_list=shape))
 
-        for shape in shapes_neg:
-            NegDimTags.append(self.points_to_surface(points_list=shape))
+        if include_holes:
+            NegDimTags = []
+            for shape in shapes_neg:
+                NegDimTags.append(self.points_to_surface(points_list=shape))
 
-        if PosDimTags and NegDimTags:
-            if include_holes:
+            if PosDimTags and NegDimTags:
                 SurfaceDimTags = self.non_intersect_shapes(PosDimTags,
                                                            NegDimTags)
             else:
-                SurfaceDimTags = self.add_shapes(PosDimTags, NegDimTags)
+                SurfaceDimTags = PosDimTags + NegDimTags
         else:
-            SurfaceDimTags = PosDimTags + NegDimTags
+            SurfaceDimTags = PosDimTags
 
         return SurfaceDimTags
