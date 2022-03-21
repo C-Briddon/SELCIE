@@ -32,9 +32,9 @@ class MeshingTools():
 
         self.dim = dimension
         self.boundaries = []
-        self.source = []
+        self.subdomains = []
         self.refinement_settings = []
-        self.source_number = 0
+        self.shape_number = 0
         self.boundary_number = 0
         self.Min_length = 1.3e-6
         self.geom = gmsh.model.occ
@@ -175,6 +175,228 @@ class MeshingTools():
 
         return VolumeDimTag
 
+    def construct_boundary(self, initial_boundaries, d, holes=None):
+        '''
+        Constructs a 2D surface around a group of closed shapes defined by
+        lists of points, that is some distance 'd' away from these shapes.
+
+        Parameters
+        ----------
+        initial_boundaries : list of list of list.
+            Each list contains the points which define the exterior of the
+            surface. Each element of the list is a list containing the x, y,
+            and z coordinate of the point it represents.
+        d : float
+            Distance between constructed boundary and source.
+        holes : list of tuple, optional
+            List of tuples repressing a groups of shapes. Each tuple contains
+            the dimension and tag of its corresponding shape. The default is
+            None.
+
+        Returns
+        -------
+        SurfaceDimTag : list of tuple
+            List of tuples repressing the new shapes. The elements of each
+            tuples is the dimension and tag of the corresponding shape.
+
+        '''
+
+        surfaces = []
+        for pos in initial_boundaries:
+            boundary = []
+
+            # Find starting point. End from max y-value.
+            y = [p[1] for p in pos]
+            Iy = y.index(max(y))
+
+            # Convert list items to numpy arrays.
+            pos_V = []
+            for p in pos[Iy:]:
+                pos_V.append(np.array(p))
+
+            for p in pos[:Iy]:
+                pos_V.append(np.array(p))
+
+            # Add periodic point at end to prevent 'Index out of range' error.
+            pos_V.append(pos_V[0])
+            k_length = len(pos_V)
+
+            # Calculate distences between consecutive points & normal vectors.
+            L = [math.dist(p0, p1) for p0, p1 in zip(pos_V[:-1], pos_V[1:])]
+            nv = [(p1 - p0)/l0 for p0, p1, l0 in zip(pos_V[:-1], pos_V[1:], L)]
+
+            # Define sig and R_matrix.
+            sig = 2*(np.cross(nv[-1], nv[0])[2] >= 0) - 1.0
+            R_matrix = sig*d*np.array([[0, 1, 0], [-1, 0, 0], [0, 0, 0]])
+
+            # Add periodic points into nv and L.
+            L.append(L[0])
+            nv.append(nv[0])
+
+            # Add initial point.
+            x_start = pos_V[0] + np.array([0.0, d, 0.0])
+            start = self.geom.addPoint(x_start[0], x_start[1], x_start[2])
+            I_start = start
+
+            # Iterate over points and construct boundary.
+            j = 0
+            u_start = None
+            while j < len(L)-1:
+                # Ensure first point cannot interact with itself.
+                if j == 0:
+                    k_max = k_length - 1
+                else:
+                    k_max = k_length
+
+                if u_start is None:
+                    # Construct arc.
+                    x_j, nv_j = pos_V[j], nv[j]
+
+                    # Get tangent vector that determines if point is on chord.
+                    x_end = x_j + np.matmul(R_matrix, nv_j)
+
+                    AB = x_end - x_start
+                    AC = x_j - x_start
+                    T = np.cross(AB, np.cross(AB, AC))
+
+                    # Input default solution.
+                    u_k = 0.0
+                    Ik = j
+
+                    for k, (x_k, nv_k, l_k) in enumerate(zip(pos_V[j+1:k_max],
+                                                             nv[j+1:],
+                                                             L[j+1:])):
+                        dv_jk = x_k - x_j
+                        lh_jk = np.linalg.norm(dv_jk)/2
+
+                        # Check if this arc intersects any other arcs.
+                        if lh_jk <= d:
+                            s = 2*(np.dot(dv_jk, nv_j) >= 0) - 1.0
+                            eta = 0.5*np.sqrt(lh_jk**(-2) - d**(-2))
+                            for w in [-1, +1]:
+                                x_new = x_j + 0.5*dv_jk + w*s*eta*np.matmul(
+                                    R_matrix, dv_jk)
+
+                                AB = x_new - x_start
+                                if np.dot(AB, T) > 0:
+                                    T = np.cross(AB, np.cross(AB, AC))
+                                    x_end = x_new
+                                    u_k = None
+                                    Ik = j + k + 1
+                                    break
+
+                        # Check if this arc intersects any lines.
+                        a = np.cross(dv_jk, nv_k)[2]
+                        eta = -2*sig*d*a - a**2
+                        if eta >= 0:
+                            s = sig*(2*(np.cross(nv_j, nv_k)[2] >= 0) - 1.0)
+                            for w in [+1, -1]:
+                                u_k_new = -np.dot(dv_jk, nv_k) + \
+                                    w*s*np.sqrt(eta)
+
+                                if u_k_new > 0 and u_k_new <= l_k:
+                                    x_new = u_k_new*nv_k + x_k + np.matmul(
+                                        R_matrix, nv_k)
+
+                                    AB = x_new - x_start
+                                    if np.dot(AB, T) > 0:
+                                        T = np.cross(AB, np.cross(AB, AC))
+                                        x_end = x_new
+                                        u_k = u_k_new
+                                        Ik = j + k + 1
+                                        break
+
+                    # If x_start and x_end are too close, then skip arc.
+                    if math.dist(x_start, x_end) < 1e-7:
+                        x_end = x_start
+                    else:
+                        # Create circle arc. Remove centre point afterwards.
+                        centre = self.geom.addPoint(x_j[0], x_j[1], x_j[2])
+                        end = self.geom.addPoint(x_end[0], x_end[1], x_end[2])
+                        boundary.append(self.geom.addCircleArc(start, centre,
+                                                               end))
+                        self.geom.remove([(0, centre)])
+
+                    j = Ik
+                    u_start = u_k
+                else:
+
+                    # Construct line.
+                    x_j, nv_j, l_j = pos_V[j], nv[j], L[j]
+
+                    # Input default solution.
+                    u_j = l_j
+                    u_k = None
+                    Ik = j + 1
+
+                    for k, (x_k, nv_k, l_k) in enumerate(zip(pos_V[j+1:k_max],
+                                                             nv[j+1:],
+                                                             L[j+1:])):
+
+                        dv_jk = x_k - x_j
+                        a = np.cross(dv_jk, nv_j)[2]
+
+                        # Check if this line intersects any circles.
+                        eta = 2*sig*d*a - a**2
+                        if eta >= 0:
+                            u_j_new = np.dot(dv_jk, nv_j) - np.sqrt(eta)
+                            if u_j_new > u_start and u_j_new < u_j:
+                                u_j = u_j_new
+                                u_k = None
+                                Ik = j + k + 1
+
+                        # Check if this line intersects other lines.
+                        gamma = np.cross(nv_j, nv_k)[2]
+
+                        # Check if lines are parallel.
+                        if abs(gamma) > 1e-14:
+                            beta = sig*d*(1 - np.dot(nv_j, nv_k))
+
+                            u_new = (np.cross(dv_jk, nv_k)[2] + beta)/gamma
+
+                            if u_new > u_start and u_new < u_j:
+                                u_k_new = (a - beta)/gamma
+                                if u_k_new > 0 and u_k_new < l_k:
+                                    u_j = u_new
+                                    u_k = u_k_new
+                                    Ik = j + k + 1
+
+                    # Add Line to boundary.
+                    x_end = u_j*nv[j] + pos_V[j] + np.matmul(R_matrix, nv[j])
+                    end = self.geom.addPoint(x_end[0], x_end[1], x_end[2])
+                    boundary.append(self.geom.addLine(start, end))
+
+                    j = Ik
+                    u_start = u_k
+
+                # Set last end point as new starting point.
+                x_start = x_end
+                start = end
+
+            # Complete boundary by joining first and last points.
+            centre = self.geom.addPoint(pos_V[0][0], pos_V[0][1], pos_V[0][2])
+            boundary.append(self.geom.addCircleArc(start, centre, I_start))
+            self.geom.remove([(0, centre)])
+
+            # Construct mesh.
+            C_b = self.geom.addCurveLoop(boundary)
+            surfaces.append((2, self.geom.addPlaneSurface([C_b])))
+
+        # Combine surfaces if more than one.
+        if len(surfaces) == 1:
+            SurfaceDimTag = surfaces[0:]
+        else:
+            SurfaceDimTag = self.geom.fuse(surfaces[:1], surfaces[1:])[0]
+
+        # Make hole if specified.
+        if holes:
+            SurfaceDimTag, J1 = self.geom.cut(objectDimTags=SurfaceDimTag,
+                                              toolDimTags=holes,
+                                              removeObject=True,
+                                              removeTool=False)
+
+        return SurfaceDimTag
+
     def shape_cutoff(self, shape_DimTags, cutoff_radius=1.0):
         '''
         Applies a radial cutoff to all shapes in open gmsh window.
@@ -245,23 +467,23 @@ class MeshingTools():
 
         '''
 
-        # Save sources, remove duplicates, and update source number.
-        self.source.append(self.geom.getEntities(dim=self.dim))
-        del self.source[-1][:self.source_number]
-        self.source_number += len(self.source[-1])
+        # Save subdomains, remove duplicates, and update subdomain number.
+        self.subdomains.append(
+            self.geom.getEntities(dim=self.dim)[self.shape_number:])
+        self.shape_number += len(self.subdomains[-1])
 
         # Check if new entry is empty.
-        if self.source[-1]:
+        if self.subdomains[-1]:
             # Save boundary information
-            self.boundaries.append(self.geom.getEntities(dim=self.dim-1))
-            del self.boundaries[-1][:self.boundary_number]
+            self.boundaries.append(
+                self.geom.getEntities(dim=self.dim-1)[self.boundary_number:])
             self.boundary_number += len(self.boundaries[-1])
 
             # Record refinement settings for this subdomain.
             self.refinement_settings.append([CellSizeMin, CellSizeMax, DistMin,
                                              DistMax, NumPointsPerCurve])
         else:
-            del self.source[-1]
+            del self.subdomains[-1]
 
         return None
 
@@ -321,7 +543,7 @@ class MeshingTools():
 
         '''
 
-        # Get source information.
+        # Get subdomain information.
         self.create_subdomain(CellSizeMin, CellSizeMax, DistMin, DistMax,
                               NumPointsPerCurve)
 
@@ -336,7 +558,7 @@ class MeshingTools():
             background_0 = [(3, self.geom.addSphere(xc=0, yc=0, zc=0,
                                                     radius=background_radius))]
 
-        if self.source:
+        if self.subdomains:
             self.geom.cut(objectDimTags=background_0, toolDimTags=source_sum,
                           removeObject=True, removeTool=False)
 
@@ -389,7 +611,18 @@ class MeshingTools():
 
         '''
 
+        # Catch any leftover shapes in a subdomain.
         self.create_subdomain()
+
+        # Use fragment to align boundaries and ensure mesh isn't overlapping.
+        frag = len(self.geom.fragment(self.geom.getEntities(self.dim), [])[0])
+
+        if frag != self.shape_number:
+            gmsh.clear()
+            gmsh.finalize()
+            raise Exception(
+                "Mesh was not generated because an overlapped was detected.")
+
         self.geom.synchronize()
 
         # If no refinement settings have been imputted then use default.
@@ -432,9 +665,9 @@ class MeshingTools():
             gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
 
             # Mark physical domains and boundaries.
-            for i, source in enumerate(self.source):
+            for i, shape in enumerate(self.subdomains):
                 gmsh.model.addPhysicalGroup(dim=self.dim,
-                                            tags=[s[1] for s in source],
+                                            tags=[s[1] for s in shape],
                                             tag=i)
 
             for i, boundary in enumerate(self.boundaries):

@@ -104,7 +104,8 @@ class FieldSolver(object):
 
         return None
 
-    def picard(self, solver_method="cg", preconditioner="default"):
+    def picard(self, solver_method="cg", preconditioner="default",
+               display_progress=True):
         '''
         Use Picard method to solve for the chameleon field throughout
         self.mesh according to the parameters, self.n, self.alpha and self.p.
@@ -119,6 +120,10 @@ class FieldSolver(object):
             Preconditioner applied to the linear calculation. For up-to-date
             list use dolfin.list_krylov_solver_preconditioners().
             The default is "default".
+        display_progress : bool, optional
+            If true then current progress of solver, including number of
+            iterations and larest change in field value, will be printed.
+            The default is True.
 
         Returns
         -------
@@ -156,11 +161,14 @@ class FieldSolver(object):
                               (1 - self.relaxation_parameter)*self.field)
 
             du_norm = d.norm(du.vector(), 'linf')
-            print('iter=%d: du_norm=%g' % (i, du_norm))
+
+            if display_progress:
+                print('iter=%d: du_norm=%g' % (i, du_norm))
 
         return None
 
-    def newton(self, solver_method="cg", preconditioner="default"):
+    def newton(self, solver_method="cg", preconditioner="default",
+               display_progress=True):
         '''
         Use Newton method to solve for the chameloen field throughout
         self.mesh according to the parameters, self.n, self.alpha and self.p.
@@ -175,6 +183,10 @@ class FieldSolver(object):
             Preconditioner applied to the linear calculation. For up-to-date
             list use dolfin.list_krylov_solver_preconditioners().
             The default is "default".
+        display_progress : bool, optional
+            If true then current progress of solver, including number of
+            iterations and larest change in field value, will be printed.
+            The default is True.
 
         Returns
         -------
@@ -211,7 +223,9 @@ class FieldSolver(object):
             self.field.vector()[:] += self.relaxation_parameter*du.vector()
 
             du_norm = d.norm(du.vector(), 'linf')
-            print('iter=%d: du_norm=%g' % (i, du_norm))
+
+            if display_progress:
+                print('iter=%d: du_norm=%g' % (i, du_norm))
 
         return None
 
@@ -589,7 +603,6 @@ class FieldSolver(object):
                           "is not a valid argument for grad_scale.")
 
                 plot_list.append(fig_grad)
-
 
         if res_scale is not None:
             if self.residual is None:
