@@ -8,7 +8,7 @@ Created on Wed Nov  3 12:09:25 2021
 from setuptools import setup
 
 setup(name='SELCIE',
-      version='1.3.0',
+      version='1.3.1',
       description="A package utalising mesh generating and finite element softwares to solve the chameleon scalar field model in user defined systems.",
       url='https://github.com/C-Briddon/SELCIE',
       author='Chad Briddon',

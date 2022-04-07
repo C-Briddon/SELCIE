@@ -615,13 +615,17 @@ class MeshingTools():
         self.create_subdomain()
 
         # Use fragment to align boundaries and ensure mesh isn't overlapping.
-        frag = len(self.geom.fragment(self.geom.getEntities(self.dim), [])[0])
-
-        if frag != self.shape_number:
-            gmsh.clear()
-            gmsh.finalize()
-            raise Exception(
-                "Mesh was not generated because an overlapped was detected.")
+        if self.shape_number > 1:
+            frag = len(self.geom.fragment(self.geom.getEntities(self.dim),
+                                          [])[0])
+            if frag != self.shape_number:
+                print("Displaying mesh because overlap was detected.")
+                print("")
+                self.geom.synchronize()
+                gmsh.fltk.run()
+                gmsh.clear()
+                gmsh.finalize()
+                raise Exception("Mesh generation terminated due to overlap.")
 
         self.geom.synchronize()
 
