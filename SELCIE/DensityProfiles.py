@@ -22,8 +22,8 @@ class DensityProfile(d.UserExpression):
         filename : str
             The name of the directory containing the saved mesh files.
             From current directory the path to files must be
-            'Saved Meshes'/'filename'. Files must be in .xdmf format which
-            can be converted from .msh using 'Main.MeshingTools.msh_2_xdmf()'.
+            'Saved Meshes'/'filename'. Files must be in .xdmf format which can
+            be converted from .msh using 'SELCIE.MeshingTools.msh_2_xdmf()'.
         dimension : int
             Number of spacial dimensions of the inputted mesh.
         symmetry : str
@@ -35,7 +35,7 @@ class DensityProfile(d.UserExpression):
             List containing the functions that define the density field inside
             each subdomain of the given mesh. The functions are assigned to
             the subdomains in numerical order. E.g. first function in list
-            assigned to subdomain with index 1. If 'profiles' is too long the
+            assigned to subdomain with index 0. If 'profiles' is too long the
             extra functions will be left unsed.
         degree : int, optional
             Degree of finite-element space. The default is 0.

@@ -7,6 +7,8 @@ Created on Thu Jun 17 08:29:06 2021
 
 Solve the chameleon field around an ellipse inside a vacuum chamber and
 compare the results to the approximate analytic solution.
+
+To generate mesh run 'CreateMesh_Ellipse.py'.
 """
 import numpy as np
 import matplotlib.pyplot as plt
@@ -129,21 +131,3 @@ for line, eta in zip(calculated_field_ellipse, Eta):
     plt.plot(Xi, error, color=colors[i], label=r"Error $\eta$ = %f" % eta)
     i += 1
 plt.legend()
-
-
-# Get fifth force measure.
-s.calc_field_grad_mag()
-field_grad, probe_point = s.measure_fifth_force(subdomain=1,
-                                                boundary_distance=0.01,
-                                                tol=1e-4)
-
-s.plot_results(grad_scale='linear')
-plt.plot(probe_point[0], probe_point[1], 'rx')
-plt.ylim([-0.05, 0.05])
-plt.xlim([-0.05, 0.05])
-
-
-# Add marker to plot indicating location of maximum fifth force.
-plt.plot(probe_point[0], probe_point[1], 'rx')
-print('Maximum field gradient is %f and is at position (%f, %f).'
-      % (field_grad, probe_point[0], probe_point[1]))

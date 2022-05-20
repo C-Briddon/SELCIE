@@ -7,6 +7,8 @@ Created on Tue Jul 20 10:47:14 2021
 
 Solve the chameleon field around a torus shaped source inside a vacuum chamber
 in both 2D and 3D, and compares the results.
+
+To generate meshes run 'CreateMesh_Torus2D.py' and 'CreateMesh_Torus3D.py'.
 """
 import numpy as np
 import dolfin as d

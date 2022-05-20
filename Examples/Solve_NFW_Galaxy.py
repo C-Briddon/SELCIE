@@ -6,6 +6,8 @@ Created on Tue Aug 31 13:36:07 2021
 @author: Chad Briddon
 
 Code to solve the chameleon field for the NFW density profile.
+
+To generate mesh run 'CreateMesh_NFW_Galaxy.py'.
 """
 import numpy as np
 import matplotlib.pyplot as plt

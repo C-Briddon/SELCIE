@@ -6,5 +6,6 @@ Created on Mon Nov  1 14:52:49 2021
 @author: chad Briddon
 """
 from .DensityProfiles import DensityProfile
+from .InitialiseField import InitialiseField
 from .MeshingTools import MeshingTools
 from .SolverChameleon import FieldSolver

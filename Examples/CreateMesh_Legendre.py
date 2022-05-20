@@ -23,8 +23,16 @@ filename = "Legndre" + str(a_coef)
 # Create the mesh in gmsh.
 MT = MeshingTools(dimension=2)
 
-MT.construct_legendre_mesh_2D(a_coef, N=1000, include_holes=True)
+# Construct legendre shape.
+L = MT.construct_legendre_mesh_2D(a_coef, N=1000, include_holes=True)
+MT.create_subdomain(CellSizeMin=1e-4, CellSizeMax=0.1, DistMax=0.4)
 
+# Construct boundary where fifth force will be measured.
+P_leg, _ = MT.legendre_shape_components(a_coef, N=1000)
+MT.construct_boundary(initial_boundaries=P_leg, d=0.5/15, holes=L)
+MT.create_subdomain(CellSizeMin=1e-4, CellSizeMax=0.1, DistMax=0.4)
+
+# Place souce and boundary in vacuum chamber.
 MT.create_background_mesh(CellSizeMin=1e-4, CellSizeMax=0.1, DistMax=0.4,
                           background_radius=1.0, wall_thickness=0.1)
 

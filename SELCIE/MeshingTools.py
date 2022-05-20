@@ -122,7 +122,7 @@ class MeshingTools():
 
         # Join lines as a closed loop and surface.
         sf = self.geom.addCurveLoop(Ll)
-        SurfaceDimTag = (2, self.geom.addPlaneSurface([sf]))
+        SurfaceDimTag = [(2, self.geom.addPlaneSurface([sf]))]
 
         return SurfaceDimTag
 
@@ -1364,12 +1364,12 @@ class MeshingTools():
 
         PosDimTags = []
         for shape in shapes_pos:
-            PosDimTags.append(self.points_to_surface(points_list=shape))
+            PosDimTags += self.points_to_surface(points_list=shape)
 
         if include_holes:
             NegDimTags = []
             for shape in shapes_neg:
-                NegDimTags.append(self.points_to_surface(points_list=shape))
+                NegDimTags += self.points_to_surface(points_list=shape)
 
             if PosDimTags and NegDimTags:
                 SurfaceDimTags = self.non_intersect_shapes(PosDimTags,

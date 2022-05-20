@@ -7,6 +7,8 @@ Created on Tue Jun  8 20:00:59 2021
 
 Example solving the chamelon field for an empty vacuum chamber for a range of
 alpha values to test the alpha dependence of the field.
+
+To generate mesh run 'CreateMesh_Empty_Vacuum_Chamber.py'.
 """
 import numpy as np
 import matplotlib.pyplot as plt
@@ -33,6 +35,8 @@ alpha = [1e6, 1e12, 1e18]
 p = DensityProfile(filename="Circle_Empty_Vacuum_chamber",
                    dimension=2, symmetry='vertical axis-symmetry',
                    profiles=[vacuum, source_wall])
+
+exit()
 
 
 # Plot rescaled field for range of alpha values.

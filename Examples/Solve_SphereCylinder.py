@@ -7,6 +7,8 @@ Created on Mon Jun  7 09:25:00 2021
 
 Solve the chameleon field for a sphere and infinitely long cylinder inside a
 vacuum.
+
+To generate mesh run 'CreateMesh_Circle_in_Vacuum.py'.
 """
 import numpy as np
 import dolfin as d

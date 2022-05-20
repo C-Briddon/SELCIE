@@ -8,11 +8,13 @@ Created on Wed Jun  9 11:16:36 2021
 Solve the chameleon field around a shape constructed from Legndre polynomials,
 inside a vacuum chamber. The values in this example were taken from
 'arXiv:1711.02065'.
+
+To generate mesh run 'CreateMesh_Legendre.py'.
 """
 import numpy as np
-from astropy import units
 import matplotlib.pyplot as plt
 
+from astropy import units
 from SELCIE import FieldSolver
 from SELCIE import DensityProfile
 from SELCIE.Misc import conv_fifth_force_chameleon, alpha_calculator_chameleon
@@ -27,15 +29,16 @@ def vacuum(x):
     return 1.0
 
 
+def constraint(x):
+    return np.linalg.norm(x) < 0.9
+
+
 # Set model parameters.
 M = 1e27                            # eV
 Lam = 1.0e-3                        # eV
 p_vac = 43.10130531853594           # eV4
 L = 15.0                            # cm
 n = 1
-
-d = 0.5/15
-d_tol = 1e-4
 
 alpha = alpha_calculator_chameleon(n, M, Lam, p_vac, L, L_NonEVUnits=units.cm)
 
@@ -45,11 +48,10 @@ a_coef = np.array([0.82, 0.02, 0.85, 3.94])/15
 # a_coef = np.array([1.47, 0.19, 0.27, 2.63])/15
 # a_coef = np.array([2.00, 0.00, 0.00, 0.00])/15
 
-
 # Import mesh and setup density field.
 p = DensityProfile(filename="Legndre" + str(a_coef),
                    dimension=2, symmetry='vertical axis-symmetry',
-                   profiles=[source_wall, vacuum, source_wall])
+                   profiles=[source_wall, vacuum, vacuum, source_wall])
 
 
 # Setup problem.
@@ -59,14 +61,12 @@ s.calc_density_field()
 s.plot_results(density_scale='linear')
 
 
-# Set tolerance on field solutions and solve for above problems.
+# Solve for field and find position on boundary where fifth force is maximised.
 s.picard()
 s.calc_field_grad_mag()
-s.calc_field_residual()
-
-field_grad, probe_point = s.measure_fifth_force(boundary_distance=d,
-                                                tol=d_tol,
-                                                subdomain=1)
+field_grad, probe_point = s.measure_function(s.field_grad_mag, subdomain=2,
+                                             check_boundary_only=True,
+                                             constraint=constraint)
 
 s.plot_results(field_scale='log', grad_scale='log')
 plt.plot(probe_point[0], probe_point[1], 'rx')

@@ -13,16 +13,18 @@ import sys
 import numpy as np
 import dolfin as d
 import matplotlib.pyplot as plt
+from SELCIE.InitialiseField import InitialiseField
 
 
 class FieldSolver(object):
-    def __init__(self, alpha, n, density_profile, deg_V=1):
+    def __init__(self, alpha, n, density_profile, initial_field_profiles=None,
+                 deg_V=1):
         '''
         Class used to calculate the chameleon scalar field profiles for given
         parameters and density field profile. The equation of motion of the
         field must be of the form, 'alpha*nabla^2 phi + phi^{-(n+1)} = p',
         where nabla, phi, and p are all dimensionless through the rescaling
-        described in [ref].
+        described in https://arxiv.org/abs/2110.11917.
 
         This class also contains tools to diagnose and enterpolate the field
         solution, such as calculating its field gradient, plotting the results,
@@ -34,8 +36,11 @@ class FieldSolver(object):
             Spatial coupling constant of the rescaled chameleon field.
         n : int
             Integer value which defines the form of the field potential.
-        density_profile : SECLIE.Main.DensityProfiles.DensityProfile
-            A class used to define the piece-wise density field attributed to a
+        density_profile : SECLIE.DensityProfiles.DensityProfile
+            A class used to define the piecewise density field attributed to a
+            given mesh consisting of some number of subdomains.
+        initial_field_profiles : SECLIE.InitialiseField.InitialiseField
+            A class used to define the piecewise field profile attributed to a
             given mesh consisting of some number of subdomains.
         deg_V : int, optional
             Degree of finite-element space. The default is 1.
@@ -78,13 +83,20 @@ class FieldSolver(object):
         self.v_vector = d.TestFunction(self.V_vector)
         self.u_vector = d.TrialFunction(self.V_vector)
 
-        # Get maximum density and minimum field values.
-        self.density_projection = d.interpolate(self.p, self.V)
-        self.density_max = self.density_projection.vector().max()
-        self.field_min = pow(self.density_max, -1/(self.n+1))
+        # Construct initial field profile.
+        if initial_field_profiles is None:
+            # Get maximum density and set field to minimum value.
+            density_projection = d.interpolate(self.p, self.V)
+            density_max = density_projection.vector().max()
+            field_min = pow(density_max, -1/(self.n+1))
+
+            self.field = d.interpolate(d.Constant(field_min), self.V)
+        else:
+            # Use piecewise field profile.
+            self.field = d.interpolate(
+                InitialiseField(self.p, initial_field_profiles), self.V)
 
         # Setup scalar and vector fields.
-        self.field = None
         self.field_grad_mag = None
         self.residual = None
         self.laplacian = None
@@ -143,8 +155,6 @@ class FieldSolver(object):
         A0 = d.assemble(d.dot(d.grad(self.u), d.grad(self.v)) *
                         self.sym_factor*d.dx)
 
-        self.field = d.interpolate(d.Constant(self.field_min), self.V)
-
         i = 0
         du_norm = 1
         while du_norm > self.tol_du and i < self.maxiter:
@@ -200,12 +210,9 @@ class FieldSolver(object):
         prm['relative_tolerance'] = self.tol_rel_du
         prm['maximum_iterations'] = self.maxiter
 
+        du = d.Function(self.V)
         A0 = d.assemble(d.dot(d.grad(self.u), d.grad(self.v)) *
                         self.sym_factor*d.dx)
-
-        du = d.Function(self.V)
-
-        self.field = d.interpolate(d.Constant(self.field_min), self.V)
 
         i = 0
         du_norm = 1
@@ -449,65 +456,67 @@ class FieldSolver(object):
 
         return None
 
-    def measure_fifth_force(self, subdomain, boundary_distance, tol):
+    def measure_function(self, function, subdomain, check_boundary_only=False,
+                         constraint=None):
         '''
-        Locates the mesh vertex which has the largest value of field gradient
-        in a region near to a boundary in a specified subdomain.
+        Locates mesh vertex where 'function' is maximised in specified
+        subdomain.
 
         Parameters
         ----------
+        function : function
+            Function that takes position arguments (x, y, z) and returns float
+            value.
         subdomain : int
-            Index of the subdoamin to be probed.
-        boundary_distance : float
-            Distance between the subdomain boundary and measurement within
-            some tolerance.
-        tol : float
-            The allowed tolerance on 'boundary_distance' such that measurements
-            are taken at a distance ('boundary_distance' +/- 'tol'/2) from the
-            subdomain boundary.
+            Index of the subdomain that will be searched.
+        check_boundary_only : bool, optional
+            If True then the search will be restricted to the boundary of the
+            specified subdomain. If False the entire subdomain wil be searched.
+            The default is False.
+        constraint : function, optional
+            Takes position argumentsb (x, y, z), return True for points to be
+            measure and Flase for points to be ignored. The default is None.
 
         Returns
         -------
-        fifth_force_max : float
-            Maximum value of field gradient found in the probed region.
-        probe_point : tuple
-            Tuple containing x, y, and z coordinate of point where the maximum
-            field gradient was located.
+        function_max : float
+            Maximum value of function on a vertex in sellected subdomain.
+        pos : numpy.ndarray
+            Position of function_max.
 
         '''
 
-        if self.field_grad_mag is None:
-            self.calc_field_grad_mag()
+        function_max = 0.0
+        pos = None
 
-        try:
-            measuring_mesh = d.SubMesh(self.mesh, self.subdomains, subdomain)
+        # Get vertex positions.
+        measuring_mesh = d.SubMesh(self.mesh, self.subdomains, subdomain)
+
+        if check_boundary_only:
             bmesh = d.BoundaryMesh(measuring_mesh, "exterior")
-            bbtree = d.BoundingBoxTree()
-            bbtree.build(bmesh)
-        except Exception:
-            raise Exception(
-                "Error has occured. Check Your subdomain index is correct.")
+            vertex_coordinates = bmesh.coordinates()
+        else:
+            vertex_coordinates = measuring_mesh.coordinates()
 
-        fifth_force_max = 0.0
-        probe_point = None
+        # Check function at vertices.
+        if constraint:
+            for p in vertex_coordinates:
+                if constraint(p):
+                    if function(p) > function_max:
+                        function_max = function(p)
+                        pos = p
+        else:
 
-        for v in d.vertices(measuring_mesh):
-            _, distance = bbtree.compute_closest_entity(v.point())
+            for p in vertex_coordinates:
+                if function(p) > function_max:
+                    function_max = function(p)
+                    pos = p
 
-            if distance > boundary_distance - tol/2 and \
-                    distance < boundary_distance + tol/2:
-                ff = self.field_grad_mag(v.point())
+        # Check a point was found.
+        if pos is None:
+            raise Exception("No vertex found. Check 'constraint'.")
 
-                if ff > fifth_force_max:
-                    fifth_force_max = ff
-                    probe_point = v.point()
-
-        if probe_point is None:
-            raise Exception(
-                "No vertex found. Try changing search parameters.")
-
-        return fifth_force_max, (probe_point.x(), probe_point.y(),
-                                 probe_point.z())
+        return function_max, pos
 
     def plot_results(self, field_scale=None, grad_scale=None, res_scale=None,
                      lapl_scale=None, dpot_scale=None, density_scale=None):
