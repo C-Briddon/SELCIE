@@ -8,6 +8,8 @@ Our hope is that this software will allow researchers to easily test what the ch
 
 In future versions of SELCIE we plan to generalize the methodology so that the user can input other screened scalar field models. The option to allow the field to evolve in time to a dynamical system is also planned, as currently the software only works for static systems.
 
+## Example Plot
+![The chameleon profile of a chameleon in a cylindrical vacuum chamber](Examples/Images/chameleon_field_of_a_chameleon.png)
 
 ## Requirements
   - python 3.8
