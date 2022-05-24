@@ -10,6 +10,7 @@ In future versions of SELCIE we plan to generalize the methodology so that the u
 
 ## Example Plot
 ![The chameleon profile of a chameleon in a cylindrical vacuum chamber](Examples/Images/chameleon_field_of_a_chameleon.png)
+![The chameleon gradient_magnitude of a chameleon in a cylindrical vacuum chamber](Examples/Images/chameleon_gradient_magnitude_of_a_chameleon.png)
 
 ## Requirements
   - python 3.8
