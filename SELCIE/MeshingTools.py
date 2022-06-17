@@ -243,7 +243,7 @@ class MeshingTools():
             u_start = None
             while j < len(L)-1:
                 # Ensure first point cannot interact with itself.
-                if j == 0:
+                if len(boundary) < 2:
                     k_max = k_length - 1
                 else:
                     k_max = k_length
