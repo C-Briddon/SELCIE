@@ -9,11 +9,33 @@ Tools to produce and modify meshes to be used in simulations.
 """
 import os
 import sys
-import math
 import gmsh
 import meshio
 import numpy as np
+from math import hypot
 from SELCIE.Misc import legendre_R
+
+
+def dist_2D(a, b):
+    '''
+    Computes distance between two points on a 2D plane.
+
+    Parameters
+    ----------
+    a & b : list of float
+        Float values represent x and y-coordinates of point.
+
+    Returns
+    -------
+    float
+        Distance between points a and b.
+
+    '''
+
+    x1, y1, _ = a
+    x2, y2, _ = b
+
+    return hypot(x1-x2, y1-y2)
 
 
 class MeshingTools():
@@ -68,7 +90,7 @@ class MeshingTools():
         index = []
         p_pre = points_list[-1]
         for p in points_list[:-1]:
-            if math.dist(p, p_pre) < self.Min_length:
+            if dist_2D(p, p_pre) < self.Min_length:
                 index.append(False)
             else:
                 index.append(True)
@@ -78,7 +100,7 @@ class MeshingTools():
 
         # Reinclude last point from original list.
         if len(points_new) > 0:
-            if math.dist(points_list[-1], points_new[-1]) < self.Min_length:
+            if dist_2D(points_list[-1], points_new[-1]) < self.Min_length:
                 points_new[-1] = points_list[-1]
             else:
                 points_new.append(points_list[-1])
@@ -222,7 +244,7 @@ class MeshingTools():
             k_length = len(pos_V)
 
             # Calculate distences between consecutive points & normal vectors.
-            L = [math.dist(p0, p1) for p0, p1 in zip(pos_V[:-1], pos_V[1:])]
+            L = [dist_2D(p0, p1) for p0, p1 in zip(pos_V[:-1], pos_V[1:])]
             nv = [(p1 - p0)/l0 for p0, p1, l0 in zip(pos_V[:-1], pos_V[1:], L)]
 
             # Define sig and R_matrix.
@@ -307,7 +329,7 @@ class MeshingTools():
                                         break
 
                     # If x_start and x_end are too close, then skip arc.
-                    if math.dist(x_start, x_end) < 1e-7:
+                    if dist_2D(x_start, x_end) < 1e-7:
                         x_end = x_start
                     else:
                         # Create circle arc. Remove centre point afterwards.
