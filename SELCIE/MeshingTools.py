@@ -392,13 +392,21 @@ class MeshingTools():
                     u_start = u_k
 
                 # Set last end point as new starting point.
-                x_start = x_end
-                start = end
+                try:
+                    x_start = x_end
+                    start = end
+                except UnboundLocalError:
+                    raise Exception("Source and/or 'd' might be too small.") \
+                        from None
 
             # Complete boundary by joining first and last points.
-            centre = self.geom.addPoint(pos_V[0][0], pos_V[0][1], pos_V[0][2])
-            boundary.append(self.geom.addCircleArc(start, centre, I_start))
-            self.geom.remove([(0, centre)])
+            if pos_V[0][1] == pos_V[-2][1]:
+                pass
+            else:
+                centre = self.geom.addPoint(pos_V[0][0], pos_V[0][1],
+                                            pos_V[0][2])
+                boundary.append(self.geom.addCircleArc(start, centre, I_start))
+                self.geom.remove([(0, centre)])
 
             # Construct mesh.
             C_b = self.geom.addCurveLoop(boundary)
@@ -742,6 +750,9 @@ class MeshingTools():
         None.
 
         '''
+
+        if filename is None:
+            return None
 
         # Create new directory for created files.
         file_path = "Saved Meshes/" + filename
