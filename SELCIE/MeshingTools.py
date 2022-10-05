@@ -231,6 +231,13 @@ class MeshingTools():
             y = [p[1] for p in pos]
             Iy = y.index(max(y))
 
+            # Incase of flat top start from first point.
+            for i in range(len(y)):
+                if y[Iy] == y[Iy-1]:
+                    Iy -= 1
+                else:
+                    break
+
             # Convert list items to numpy arrays.
             pos_V = []
             for p in pos[Iy:]:
@@ -260,9 +267,14 @@ class MeshingTools():
             start = self.geom.addPoint(x_start[0], x_start[1], x_start[2])
             I_start = start
 
+            # Check if start with line or arc.
+            if nv[0][0] == 1.0:
+                u_start = 0.0  # start with line.
+            else:
+                u_start = None  # start with arc.
+
             # Iterate over points and construct boundary.
             j = 0
-            u_start = None
             while j < len(L)-1:
                 # Ensure first point cannot interact with itself.
                 if len(boundary) < 2:
@@ -400,13 +412,10 @@ class MeshingTools():
                         from None
 
             # Complete boundary by joining first and last points.
-            if pos_V[0][1] == pos_V[-2][1]:
-                pass
-            else:
-                centre = self.geom.addPoint(pos_V[0][0], pos_V[0][1],
-                                            pos_V[0][2])
-                boundary.append(self.geom.addCircleArc(start, centre, I_start))
-                self.geom.remove([(0, centre)])
+            centre = self.geom.addPoint(pos_V[0][0], pos_V[0][1],
+                                        pos_V[0][2])
+            boundary.append(self.geom.addCircleArc(start, centre, I_start))
+            self.geom.remove([(0, centre)])
 
             # Construct mesh.
             C_b = self.geom.addCurveLoop(boundary)
