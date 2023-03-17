@@ -530,7 +530,8 @@ class MeshingTools():
                                DistMin=0.0, DistMax=1.0,
                                NumPointsPerCurve=1000, background_radius=1.0,
                                wall_thickness=None,
-                               refine_outer_wall_boundary=False):
+                               refine_outer_wall_boundary=False,
+                               mesh_halve=None):
         '''
         Generates a backgound mesh filling the space between shapes in the
         open gmsh window and a circular/spherical shell.
@@ -575,6 +576,11 @@ class MeshingTools():
         refine_outer_wall_boundary : bool, optional
             If True will also apply refinement to the exterior boundary of the
             outer wall (if exists). The default is False.
+        mesh_halve : string, optional
+            Generate background mesh that has been halved. Direction will
+            be determined by whether the valie is 'vertical' or 'horizontal'.
+            If None then mesh is unchanged. It is recommended to cut the mesh
+            if rotational symmetry is used. The default is None.
 
         Returns
         -------
@@ -585,6 +591,32 @@ class MeshingTools():
         # Get subdomain information.
         self.create_subdomain(CellSizeMin, CellSizeMax, DistMin, DistMax,
                               NumPointsPerCurve)
+
+        # If needed make object for cutting the background.
+        if mesh_halve is not None:
+            T = background_radius
+            if wall_thickness is not None:
+                T += 2*wall_thickness
+
+            if mesh_halve == "vertical":
+                dx, dy = T, 2*T
+            elif mesh_halve == "horizontal":
+                dx, dy = 2*T, T
+            else:
+                msg = "mesh_value must be 'vertical', 'horizontal', or None."
+                raise NameError(msg)
+
+            # Create object to cut the mesh.
+            if self.dim == 2:
+                cs = [(2, self.geom.addRectangle(x=-T, y=-T, z=0.0,
+                                                 dx=dx, dy=dy))]
+            elif self.dim == 3:
+                cs = [(3, self.geom.addBox(x=-T, y=-T, z=-T, dx=dx, dy=dy,
+                                           dz=2*T))]
+
+            self.create_subdomain(CellSizeMin=None, CellSizeMax=None,
+                                  DistMin=None, DistMax=None,
+                                  NumPointsPerCurve=None)
 
         # Define vacuum and inner wall boundary.
         source_sum = self.geom.getEntities(dim=self.dim)
@@ -627,6 +659,16 @@ class MeshingTools():
                                       DistMax, NumPointsPerCurve)
             else:
                 self.create_subdomain()
+
+        if mesh_halve is not None:
+            # Remove cutting square.
+            self.geom.remove(cs, recursive=True)
+            Id = self.subdomains.index(cs)
+            del(self.boundaries[Id])
+            del(self.subdomains[Id])
+            del(self.refinement_settings[Id])
+            self.boundary_number -= 1
+            self.shape_number -= 1
 
         return None
 
