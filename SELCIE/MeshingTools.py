@@ -197,7 +197,8 @@ class MeshingTools():
 
         return VolumeDimTag
 
-    def construct_boundary(self, initial_boundaries, d, holes=None):
+    def construct_boundary(self, initial_boundaries, d, holes=None,
+                           symmetry=None):
         '''
         Constructs a 2D surface around a group of closed shapes defined by
         lists of points, that is some distance 'd' away from these shapes.
@@ -214,6 +215,11 @@ class MeshingTools():
             List of tuples repressing a groups of shapes. Each tuple contains
             the dimension and tag of its corresponding shape. The default is
             None.
+        symmetry : string or None, optional
+            Cuts surface along axis indicated
+            (symmetry = {'vertical', 'horizontal', None}). If value is None
+            then no cut is performed. Recommended for 2D meshes with
+            rotational symmetry imposed. The default is None.
 
         Returns
         -------
@@ -421,6 +427,35 @@ class MeshingTools():
             C_b = self.geom.addCurveLoop(boundary)
             surfaces.append((2, self.geom.addPlaneSurface([C_b])))
 
+            # Cut at axis to comply with symmetry.
+            if symmetry is not None:
+                x = [p[0] for p in pos]
+
+                x_min, x_max = min(x)-d, max(x)+d
+                y_min, y_max = min(y)-d, max(y)+d
+
+                if symmetry == "vertical":
+                    if x_min < 0.0:
+                        cs = [(2, self.geom.addRectangle(
+                            x=0.0, y=y_min, z=0.0, dx=x_min, dy=y_max-y_min))]
+
+                        self.geom.cut(objectDimTags=surfaces[-1:],
+                                      toolDimTags=cs, removeObject=True,
+                                      removeTool=True)
+
+                elif symmetry == "horizontal":
+                    if y_min < 0.0:
+                        cs = [(2, self.geom.addRectangle(
+                            x=x_min, y=0.0, z=0.0, dx=x_max-x_min, dy=y_min))]
+
+                        self.geom.cut(objectDimTags=surfaces[-1:],
+                                      toolDimTags=cs, removeObject=True,
+                                      removeTool=True)
+
+                else:
+                    raise NameError(
+                        "symmetry must be 'vertical', 'horizontal', or None.")
+
         # Combine surfaces if more than one.
         if len(surfaces) == 1:
             SurfaceDimTag = surfaces[0:]
@@ -531,7 +566,7 @@ class MeshingTools():
                                NumPointsPerCurve=1000, background_radius=1.0,
                                wall_thickness=None,
                                refine_outer_wall_boundary=False,
-                               mesh_halve=None):
+                               symmetry=None):
         '''
         Generates a backgound mesh filling the space between shapes in the
         open gmsh window and a circular/spherical shell.
@@ -576,11 +611,11 @@ class MeshingTools():
         refine_outer_wall_boundary : bool, optional
             If True will also apply refinement to the exterior boundary of the
             outer wall (if exists). The default is False.
-        mesh_halve : string, optional
-            Generate background mesh that has been halved. Direction will
-            be determined by whether the valie is 'vertical' or 'horizontal'.
-            If None then mesh is unchanged. It is recommended to cut the mesh
-            if rotational symmetry is used. The default is None.
+        symmetry : string or None, optional
+            Cuts surface along axis indicated
+            (symmetry = {'vertical', 'horizontal', None}). If value is None
+            then no cut is performed. Recommended for 2D meshes with
+            rotational symmetry imposed. The default is None.
 
         Returns
         -------
@@ -593,14 +628,14 @@ class MeshingTools():
                               NumPointsPerCurve)
 
         # If needed make object for cutting the background.
-        if mesh_halve is not None:
+        if symmetry is not None:
             T = background_radius
             if wall_thickness is not None:
                 T += 2*wall_thickness
 
-            if mesh_halve == "vertical":
+            if symmetry == "vertical":
                 dx, dy = T, 2*T
-            elif mesh_halve == "horizontal":
+            elif symmetry == "horizontal":
                 dx, dy = 2*T, T
             else:
                 msg = "mesh_value must be 'vertical', 'horizontal', or None."
@@ -660,7 +695,7 @@ class MeshingTools():
             else:
                 self.create_subdomain()
 
-        if mesh_halve is not None:
+        if symmetry is not None:
             # Remove cutting square.
             self.geom.remove(cs, recursive=True)
             Id = self.subdomains.index(cs)
