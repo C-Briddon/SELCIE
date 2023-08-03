@@ -16,4 +16,4 @@ dependencies:
   - pip
 
   - pip:
-    - gmsh==4.8.3
+    - gmsh==4.11.1
