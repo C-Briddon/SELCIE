@@ -27,11 +27,15 @@ If you use SELCIE in your research please include the following citation:
 ```
 @article{Briddon:2021etm,
     author = "Briddon, Chad and Burrage, Clare and Moss, Adam and Tamosiunas, Andrius",
-    title = "{SELCIE: A tool for investigating the chameleon field of arbitrary sources}",
+    title = "{SELCIE: a tool for investigating the chameleon field of arbitrary sources}",
     eprint = "2110.11917",
     archivePrefix = "arXiv",
     primaryClass = "gr-qc",
-    month = "10",
+    doi = "10.1088/1475-7516/2021/12/043",
+    journal = "JCAP",
+    volume = "12",
+    number = "12",
+    pages = "043",
     year = "2021"
 }
 ```
