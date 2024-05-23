@@ -11,8 +11,16 @@ import os
 import dolfin as d
 
 
+def create_boundary_class(func):
+    class C(d.SubDomain):
+        def inside(self, x, on_boundary):
+            return func(x) and on_boundary
+    return C
+
+
 class DensityProfile(d.UserExpression):
-    def __init__(self, filename, dimension, symmetry, profiles, degree=0):
+    def __init__(self, filename, dimension, symmetry, profiles, degree=0,
+                 path=None):
         '''
         A class used to define the piecewise density field attributed to a
         given mesh consisting of some number of subdomains.
@@ -39,12 +47,20 @@ class DensityProfile(d.UserExpression):
             extra functions will be left unsed.
         degree : int, optional
             Degree of finite-element space. The default is 0.
+        path : None or string, optional
+            If saving to a different directory than the current one then
+            specify it using path. The default is None.
 
         '''
 
         super().__init__(degree)
+        
+        # Set path to location of directory.
+        if path is None:
+            file_path = 'Saved Meshes/' + filename
+        else:
+            file_path = path + '/Saved Meshes/' + filename
 
-        file_path = "Saved Meshes/" + filename
         if os.path.isdir(file_path) is False:
             raise Exception("Directory '%s' does not exist." % file_path)
 
@@ -82,3 +98,37 @@ class DensityProfile(d.UserExpression):
 
     def value_shape(self):
         return ()
+
+    def assign_boundary_labels(self, boundary_definitions):
+        '''
+        Relabels boundary of mesh according to functions contained within
+        'boundary_definitions'. The first element will correspond to boundary
+        label 1, the second 2 and so on. Any remaining regions of the boundary
+        not covered by 'boundary_definitions' will have index 0.
+
+        Parameters
+        ----------
+        boundary_definitions : list of function
+            List containg functions that defines how to seperate the boundary
+            of the mesh into different regions. Each function must take input
+            argument x, where x is a coordinate, and return True if x is on
+            the region of the boundary you wish to label and False if not.
+
+        Returns
+        -------
+        None.
+
+        '''
+
+        # Start by setting all boundaries to the default value.
+        class Default_Boundary(d.SubDomain):
+            def inside(self, x, on_boundary):
+                return on_boundary
+        Default_Boundary().mark(self.boundary, 0)
+        #self.boundary.set_all(0)
+
+        # Assign boundary regions.
+        for i, func in enumerate(boundary_definitions):
+            create_boundary_class(func)().mark(self.boundary, i+1)
+
+        return None

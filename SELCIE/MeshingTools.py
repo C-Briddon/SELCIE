@@ -39,7 +39,7 @@ def dist_2D(a, b):
 
 
 class MeshingTools():
-    def __init__(self, dimension):
+    def __init__(self, dimension, path=None):
         '''
         Class used to construct user-defined meshes. Creates an open gmsh
         window when class is called.
@@ -49,10 +49,14 @@ class MeshingTools():
         dimension : int
             The dimension of the mesh being constructed. Currently works for
             2D and 3D.
+        path : None or string, optional
+            If saving to a different directory than the current one then
+            specify it using path. The default is None.
 
         '''
 
         self.dim = dimension
+        self.path = path
         self.boundaries = []
         self.subdomains = []
         self.refinement_settings = []
@@ -699,9 +703,9 @@ class MeshingTools():
             # Remove cutting square.
             self.geom.remove(cs, recursive=True)
             Id = self.subdomains.index(cs)
-            del(self.boundaries[Id])
-            del(self.subdomains[Id])
-            del(self.refinement_settings[Id])
+            del self.boundaries[Id]
+            del self.subdomains[Id]
+            del self.refinement_settings[Id]
             self.boundary_number -= 1
             self.shape_number -= 1
 
@@ -799,11 +803,17 @@ class MeshingTools():
         gmsh.model.mesh.generate(dim=self.dim)
 
         if filename is not None:
-            # If Saved Meshes directory not found create one.
-            if os.path.isdir('Saved Meshes') is False:
-                os.makedirs('Saved Meshes')
+            # Set path to location of directory.
+            if self.path is None:
+                mesh_path = 'Saved Meshes'
+            else:
+                mesh_path = self.path + '/Saved Meshes'
 
-            gmsh.write(fileName="Saved Meshes/" + filename+".msh")
+            # If Saved Meshes directory not found create one.
+            if os.path.isdir(mesh_path) is False:
+                os.makedirs(mesh_path)
+
+            gmsh.write(fileName=mesh_path+"/"+filename+".msh")
 
         if show_mesh is True:
             gmsh.fltk.run()
@@ -841,7 +851,11 @@ class MeshingTools():
             return None
 
         # Create new directory for created files.
-        file_path = "Saved Meshes/" + filename
+        if self.path is None:
+            file_path = "Saved Meshes/" + filename
+        else:
+            file_path = self.path + '/Saved Meshes/' + filename
+
         try:
             os.makedirs(file_path)
         except FileExistsError:
