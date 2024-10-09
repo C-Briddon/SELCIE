@@ -39,7 +39,7 @@ def dist_2D(a, b):
 
 
 class MeshingTools():
-    def __init__(self, dimension, path=None):
+    def __init__(self, dimension, path=None, display_messages=True):
         '''
         Class used to construct user-defined meshes. Creates an open gmsh
         window when class is called.
@@ -52,6 +52,10 @@ class MeshingTools():
         path : None or string, optional
             If saving to a different directory than the current one then
             specify it using path. The default is None.
+        display_messages : bool, optional
+            If 'True' all gmsh messages, including progress of mesh generation
+            will be printed. If 'False' then only error messages will be
+            printed.  The  default is False.
 
         '''
 
@@ -65,9 +69,13 @@ class MeshingTools():
         self.Min_length = 1.3e-6
         self.geom = gmsh.model.occ
 
-        # Open GMSH window.
+        # Open GMSH window and set whether GMSH messgaes should be displayed.
         gmsh.initialize()
-        gmsh.option.setNumber('General.Verbosity', 1)
+
+        if display_messages is True:
+            gmsh.option.setNumber('General.Verbosity', 5)
+        else:
+            gmsh.option.setNumber('General.Verbosity', 1)
 
         return None
 
@@ -113,7 +121,49 @@ class MeshingTools():
 
         return points_new
 
-    def points_to_surface(self, points_list):
+    def points_to_curve(self, points_list, embed=None):
+        '''
+        Generates a curve out off straight lines connecting the points
+        defined by a list of points.
+
+        Parameters
+        ----------
+        points_list : list of list
+            List containing the points to be connected.
+        embed : list of tuple, optional
+            List of tuples repressing a group of shapes. Each tuple contains
+            the dimension and tag of its corresponding shape. These shapes
+            will be embedded into the newly generated one. The default is None.
+
+        Returns
+        -------
+        LineDimTags : list of tuple
+            Each Tuple in the list corresponds to a straight line and contains
+            the dimension and tag of the generated line.
+
+        '''
+
+        Pl = []
+        LineDimTags = []
+
+        # Set points.
+        for p in points_list:
+            Pl.append(self.geom.addPoint(p[0], p[1], p[2]))
+
+        # Join points as lines.
+        for p0, p1 in zip(Pl[:-1], Pl[1:]):
+            LineDimTags.append((1, self.geom.addLine(p0, p1)))
+
+        if embed is not None:
+            # Embed shape into new one.
+            LineDimTags, _ = self.geom.cut(objectDimTags=LineDimTags,
+                                           toolDimTags=embed,
+                                           removeObject=True,
+                                           removeTool=False)
+
+        return LineDimTags
+
+    def points_to_surface(self, points_list, embed=None):
         '''
         Generates closed surface whose boundary is defined by a list of points.
 
@@ -123,6 +173,10 @@ class MeshingTools():
             List containing the points which define the exterior of the
             surface. Each element of the list is a list containing the x, y,
             and z coordinate of the point it represents.
+        embed : list of tuple, optional
+            List of tuples repressing a group of shapes. Each tuple contains
+            the dimension and tag of its corresponding shape. These shapes
+            will be embedded into the newly generated one. The default is None.
 
         Returns
         -------
@@ -150,9 +204,16 @@ class MeshingTools():
         sf = self.geom.addCurveLoop(Ll)
         SurfaceDimTag = [(2, self.geom.addPlaneSurface([sf]))]
 
+        if embed is not None:
+            # Embed shape into new one.
+            SurfaceDimTag, _ = self.geom.cut(objectDimTags=SurfaceDimTag,
+                                             toolDimTags=embed,
+                                             removeObject=True,
+                                             removeTool=False)
+
         return SurfaceDimTag
 
-    def points_to_volume(self, contour_list):
+    def points_to_volume(self, contour_list, remove_contours=True, embed=None):
         '''
         Generates closed volume whose boundary is defined by list of contours.
 
@@ -163,6 +224,14 @@ class MeshingTools():
             volume. The contours are themselves a list whose elements are
             lists, each containing the x, y, and z coordinate of the point
             it represents.
+        remove_contours : bool
+            If 'True' removes the contours, defined by the elements of
+            contour_list, used to construct the volume. Otherwise, contours
+            will remain. The default is True.
+        embed : list of tuple, optional
+            List of tuples repressing a group of shapes. Each tuple contains
+            the dimension and tag of its corresponding shape. These shapes
+            will be embedded into the newly generated one. The default is None.
 
         Returns
         -------
@@ -176,6 +245,10 @@ class MeshingTools():
                 raise Exception(
                     "One or more contours does not have enough points. (min 3)"
                     )
+
+        # If contours are to be removed we must first record existing lines.
+        if remove_contours is True:
+            line_number_0 = len(self.geom.getEntities(dim=1))
 
         L_list = []
         for points_list in contour_list:
@@ -196,12 +269,21 @@ class MeshingTools():
 
         VolumeDimTag = self.geom.addThruSections(L_list)
 
-        # Delete contour lines.
-        self.geom.remove(self.geom.getEntities(dim=1), recursive=True)
+        # Delete contour lines if requested.
+        if remove_contours:
+            self.geom.remove(self.geom.getEntities(dim=1)[line_number_0:],
+                             recursive=True)
+
+        if embed is not None:
+            # Embed shape into new one.
+            VolumeDimTag, _ = self.geom.cut(objectDimTags=VolumeDimTag,
+                                            toolDimTags=embed,
+                                            removeObject=True,
+                                            removeTool=False)
 
         return VolumeDimTag
 
-    def construct_boundary(self, initial_boundaries, d, holes=None,
+    def construct_boundary(self, initial_boundaries, d, embed=None,
                            symmetry=None):
         '''
         Constructs a 2D surface around a group of closed shapes defined by
@@ -215,10 +297,10 @@ class MeshingTools():
             and z coordinate of the point it represents.
         d : float
             Distance between constructed boundary and source.
-        holes : list of tuple, optional
-            List of tuples repressing a groups of shapes. Each tuple contains
-            the dimension and tag of its corresponding shape. The default is
-            None.
+        embed : list of tuple, optional
+            List of tuples repressing a group of shapes. Each tuple contains
+            the dimension and tag of its corresponding shape. These shapes
+            will be embedded into the newly generated one. The default is None.
         symmetry : string or None, optional
             Cuts surface along axis indicated
             (symmetry = {'vertical', 'horizontal', None}). If value is None
@@ -466,12 +548,12 @@ class MeshingTools():
         else:
             SurfaceDimTag = self.geom.fuse(surfaces[:1], surfaces[1:])[0]
 
-        # Make hole if specified.
-        if holes:
-            SurfaceDimTag, J1 = self.geom.cut(objectDimTags=SurfaceDimTag,
-                                              toolDimTags=holes,
-                                              removeObject=True,
-                                              removeTool=False)
+        # Embed existing shape if specified.
+        if embed:
+            SurfaceDimTag, _ = self.geom.cut(objectDimTags=SurfaceDimTag,
+                                             toolDimTags=embed,
+                                             removeObject=True,
+                                             removeTool=False)
 
         return SurfaceDimTag
 
@@ -753,10 +835,15 @@ class MeshingTools():
         if self.refinement_settings:
 
             # Get boundary_type.
-            if self.dim == 2:
+            if self.dim == 1:
+                boundary_type = "PointsList"
+            elif self.dim == 2:
                 boundary_type = "CurvesList"
             elif self.dim == 3:
                 boundary_type = "SurfacesList"
+            else:
+                print("Invalid value for self.dim.")
+                return None
 
             # Group boundaries together and define distence fields.
             i = 0
@@ -816,6 +903,13 @@ class MeshingTools():
             gmsh.write(fileName=mesh_path+"/"+filename+".msh")
 
         if show_mesh is True:
+            if self.dim == 1:
+                print()
+                print("------------------------------------------------------")
+                print("Note :")
+                print("In 1D refinement vertices are pressent but not shown.")
+                print("------------------------------------------------------")
+                print()
             gmsh.fltk.run()
 
         gmsh.clear()
@@ -878,7 +972,28 @@ class MeshingTools():
         # read input from infile
         inmsh = meshio.read(file_path + ".msh")
 
-        if self.dim == 2:
+        if self.dim == 1:
+            # Delete third (obj=2) column (axis=1), striping the z-component.
+            # Due to quirk in meshio cannot remove redundent y-component.
+            outpoints = np.delete(arr=inmsh.points, obj=2, axis=1)
+
+            meshio.write(
+                outfile_mesh, meshio.Mesh(
+                    points=outpoints,
+                    cells=[('line', inmsh.get_cells_type('line'))],
+                    cell_data={'Subdomain': [inmsh.cell_data_dict[
+                        'gmsh:physical']['line']]},
+                    field_data=inmsh.field_data))
+
+            meshio.write(
+                outfile_boundary, meshio.Mesh(
+                    points=outpoints,
+                    cells=[('vertex', inmsh.get_cells_type('vertex'))],
+                    cell_data={'Boundary': [inmsh.cell_data_dict[
+                        'gmsh:physical']['vertex']]},
+                    field_data=inmsh.field_data))
+
+        elif self.dim == 2:
             # Delete third (obj=2) column (axis=1), striping the z-component.
             outpoints = np.delete(arr=inmsh.points, obj=2, axis=1)
 
@@ -1209,6 +1324,42 @@ class MeshingTools():
         self.geom.translate(shapes, dx=0, dy=0, dz=dz)
 
         return shapes
+
+    def create_1D_line(self, x_start, x_end, embed=None):
+        '''
+        Generates a straight line along the x-axis, bounded by 'x_start' and
+        'x_end'.
+
+        Parameters
+        ----------
+        x_start : float
+            x-value of the start of the line.
+        x_end : float
+            x-value of the end of the line.
+        embed : list of tuple, optional
+            List of tuples repressing a group of shapes. Each tuple contains
+            the dimension and tag of its corresponding shape. These shapes
+            will be embedded into the newly generated one. The default is None.
+
+        Returns
+        -------
+        LineDimTag : tuple
+            Tuple containing the dimension and tag of the generated line.
+
+        '''
+
+        LineDimTag = [(1, self.geom.addLine(
+            startTag=self.geom.addPoint(x=x_start, y=0, z=0),
+            endTag=self.geom.addPoint(x=x_end, y=0, z=0)))]
+
+        # Make hole if specified.
+        if embed:
+            LineDimTag, _ = self.geom.cut(objectDimTags=LineDimTag,
+                                          toolDimTags=embed,
+                                          removeObject=True,
+                                          removeTool=False)
+
+        return LineDimTag
 
     def create_ellipse(self, rx=0.1, ry=0.1):
         '''
