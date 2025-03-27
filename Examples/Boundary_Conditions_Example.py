@@ -125,13 +125,13 @@ if __name__ == "__main__":
         return x[1] < -0.4999
 
     p.assign_boundary_labels([left, right, top, bottom])
+    # Note this assigns boundaries (1, 2, 3, 4).
 
     # Solve field with boundary conditions.
     solver = FieldSolver(alpha=1, n=1, density_profile=p)
-    solver.tol_du = 1e-12
     solver.picard(BCs=[('Neumann', 'x[0]'), ('Neumann', 'sin(x[1]*2*pi)'),
                        ('Dirichlet', '1e-8'), ('Neumann', '0.4'),
-                       ('Neumann', 'pow(x[0], 2)')])
+                       ('Neumann', 'pow(x[0], 2)')], tol_du=1e-12)
     solver.calc_field_grad_vector()
 
     # Plot field and gradient throughout doamin and on the boundary.

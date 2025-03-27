@@ -54,7 +54,7 @@ class DensityProfile(d.UserExpression):
         '''
 
         super().__init__(degree)
-        
+
         # Set path to location of directory.
         if path is None:
             file_path = 'Saved Meshes/' + filename
@@ -125,7 +125,6 @@ class DensityProfile(d.UserExpression):
             def inside(self, x, on_boundary):
                 return on_boundary
         Default_Boundary().mark(self.boundary, 0)
-        #self.boundary.set_all(0)
 
         # Assign boundary regions.
         for i, func in enumerate(boundary_definitions):

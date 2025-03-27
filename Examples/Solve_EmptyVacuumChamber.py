@@ -59,8 +59,7 @@ for i, a in enumerate(alpha):
     s = FieldSolver(alpha=a, n=n, density_profile=p)
 
     # Set tolerance on field solutions and solve for above problems.
-    s.tol_du = 1e-10
-    s.picard()
+    s.picard(tol_du=1e-10)
 
     for t in np.linspace(0, 2*np.pi, 100, endpoint=False):
         dr = dx*np.array([np.cos(t), np.sin(t)])

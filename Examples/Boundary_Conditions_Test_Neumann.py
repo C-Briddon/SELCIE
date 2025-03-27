@@ -66,8 +66,7 @@ if __name__ == "__main__":
                        profiles=[source, background])
 
     solver = FieldSolver(alpha=1, n=1, density_profile=p)
-    solver.tol_du = 1e-12
-    solver.picard()
+    solver.picard(tol_du=1e-12)
     solver.calc_field_grad_vector()
 
     # Plot field and gradient throughout doamin and on the boundary.
@@ -123,9 +122,8 @@ if __name__ == "__main__":
     for g, label in zip(Neumann_BC, labels):
 
         solver = FieldSolver(alpha=1, n=1, density_profile=p)
-        solver.tol_du = 1e-12
 
-        solver.picard(BCs=[g])
+        solver.picard(BCs=[g], tol_du=1e-12)
         solver.calc_field_grad_vector()
 
         # Plot field and gradient throughout doamin and on the boundary.

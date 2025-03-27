@@ -109,8 +109,7 @@ p_2D = DensityProfile(filename=filename_2D, dimension=2,
 s_2D = FieldSolver(alpha=1, n=1, density_profile=p_2D)
 
 s_2D.calc_density_field()
-s_2D.tol_du = 1e-11
-s_2D.picard(display_progress=True)
+s_2D.picard(display_progress=True, tol_du=1e-11)
 s_2D.plot_results(field_scale='linear', density_scale='linear')
 
 # Make plot comparing fields.

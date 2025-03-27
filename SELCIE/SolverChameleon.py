@@ -18,7 +18,7 @@ from SELCIE.InitialiseField import InitialiseField
 
 class FieldSolver(object):
     def __init__(self, alpha, n, density_profile, initial_field_profiles=None,
-                 deg_V=1):
+                 deg_V=2):
         '''
         Class used to calculate the chameleon scalar field profiles for given
         parameters and density field profile. The equation of motion of the
@@ -59,6 +59,16 @@ class FieldSolver(object):
         self.mesh_dimension = density_profile.mesh.topology().dim()
         self.mesh_symmetry = density_profile.symmetry
 
+        # Define function space, trial function and test function.
+        self.V = d.FunctionSpace(self.mesh, 'CG', self.deg_V)
+        self.v = d.TestFunction(self.V)
+        self.u = d.TrialFunction(self.V)
+
+        self.V_vector = d.VectorFunctionSpace(self.mesh, 'CG', self.deg_V)
+        self.v_vector = d.TestFunction(self.V_vector)
+        self.u_vector = d.TrialFunction(self.V_vector)
+
+        # Determine and assign symmetry factor.
         if self.mesh_dimension == 3:
             self.sym_factor = d.Constant(1)
 
@@ -68,10 +78,12 @@ class FieldSolver(object):
                 self.sym_factor = d.Constant(1)
 
             elif self.mesh_symmetry == 'vertical axis-symmetry':
-                self.sym_factor = d.Expression('abs(x[0])', degree=0)
+                self.sym_factor = d.interpolate(d.Expression('abs(x[0])',
+                                                             degree=0), self.V)
 
             elif self.mesh_symmetry == 'horizontal axis-symmetry':
-                self.sym_factor = d.Expression('abs(x[1])', degree=0)
+                self.sym_factor = d.interpolate(d.Expression('abs(x[1])',
+                                                             degree=0), self.V)
 
             else:
                 print()
@@ -94,10 +106,12 @@ class FieldSolver(object):
                 self.sym_factor = d.Constant(1)
 
             elif self.mesh_symmetry == 'spherical symmetry':
-                self.sym_factor = d.Expression('pow(x[0], 2)', degree=0)
+                self.sym_factor = d.interpolate(d.Expression('pow(x[0], 2)',
+                                                             degree=0), self.V)
 
             elif self.mesh_symmetry == 'cylindrical symmetry':
-                self.sym_factor = d.Expression('abs(x[0])', degree=0)
+                self.sym_factor = d.interpolate(d.Expression('abs(x[0])',
+                                                             degree=0), self.V)
 
             else:
                 print()
@@ -128,15 +142,6 @@ class FieldSolver(object):
             print('------------------------------------------------------')
             print()
 
-        # Define function space, trial function and test function.
-        self.V = d.FunctionSpace(self.mesh, 'CG', self.deg_V)
-        self.v = d.TestFunction(self.V)
-        self.u = d.TrialFunction(self.V)
-
-        self.V_vector = d.VectorFunctionSpace(self.mesh, 'CG', self.deg_V)
-        self.v_vector = d.TestFunction(self.V_vector)
-        self.u_vector = d.TrialFunction(self.V_vector)
-
         # Construct initial field profile.
         if initial_field_profiles is None:
             # Get maximum density and set field to minimum value.
@@ -161,31 +166,19 @@ class FieldSolver(object):
         # Assemble matrices.
         self.P = d.assemble(self.p*self.v*self.sym_factor*d.dx)
         self.A = d.assemble(self.u*self.v*self.sym_factor*d.dx)
-
-        # Define general solver parameters.
-        self.relaxation_parameter = 1.0
-        self.tol_du = 1.0e-14
-        self.tol_rel_du = 1.0e-10
-        self.maxiter = 1000
+        self.M = d.assemble(d.dot(d.grad(self.u), d.grad(self.v)) *
+                            self.sym_factor*d.dx)
 
         return None
 
-    def picard(self, solver_method="cg", preconditioner="default",
-               display_progress=True, BCs=None):
+    def picard(self, display_progress=True, BCs=None, tol_du=1e-14,
+               relaxation_parameter=1.0, miniter=0, maxiter=1000):
         '''
         Use Picard method to solve for the chameleon field throughout
         self.mesh according to the parameters, self.n, self.alpha and self.p.
 
         Parameters
         ----------
-        solver_method : str, optional
-            Method applied by FEniCS to solve the linear approximation in each
-            of the iterative steps. For up-to-date list use
-            dolfin.list_linear_solver_methods(). The default is "cg".
-        preconditioner : str, optional
-            Preconditioner applied to the linear calculation. For up-to-date
-            list use dolfin.list_krylov_solver_preconditioners().
-            The default is "default".
         display_progress : bool, optional
             If true then current progress of solver, including number of
             iterations and larest change in field value, will be printed.
@@ -199,9 +192,24 @@ class FieldSolver(object):
             indicating the type of boundary condition ('Dirichlet'/'Neumann'),
             while the second gives the boundary function in the form of C++
             code as a string. If the boundary function is instead None then
-            defaults are used which isno boundary condition is applied for
+            defaults are used which is no boundary condition is applied for
             Dirichlet and zero for Neumann. If BCs is None then the default is
             used for all boundaries. The default is None.
+        tol_du : float, optional
+            Absolute tolerence of solver. If maximum difference in solution
+            from one iteration to the next is less then 'tol_du', then it is
+            considered to have converged. The default is 1e-14.
+        relaxation_parameter : float, optional
+            Controls the speed and stability of convergence since When
+            updating the solution bwteen iterations it is done as
+            (w*f_new + (1-w)*f_old), where w is the relaxation_parameter.
+            Values should range from (0.0, 1.0). The default is 1.0.
+        miniter : int, optional
+            Minimum number of iterations solver can perform before it can
+            terminate. The default is 0.
+        maxiter : int, optional
+            Maximum number of iterations solver can perform.
+            The default is 1000.
 
         Returns
         -------
@@ -209,17 +217,8 @@ class FieldSolver(object):
 
         '''
 
-        solver = d.KrylovSolver(solver_method, preconditioner)
-        prm = solver.parameters
-        prm['absolute_tolerance'] = self.tol_du
-        prm['relative_tolerance'] = self.tol_rel_du
-        prm['maximum_iterations'] = self.maxiter
-
         du = d.Function(self.V)
         u = d.Function(self.V)
-
-        A0 = d.assemble(self.alpha*d.dot(d.grad(self.u), d.grad(self.v)) *
-                        self.sym_factor*d.dx)
 
         # Apply Dirichlet and Neumann boundary conditions.
         Dirichlet_BCs = []
@@ -254,25 +253,35 @@ class FieldSolver(object):
         else:
             F = self.P
 
+        # Preallocating the UFL form.
+        UFL_A1 = (self.n + 1)*pow(self.field, -self.n-2)*self.u*self.v * \
+            self.sym_factor*d.dx
+
+        UFL_B = (self.n + 2)*pow(self.field, -self.n-1)*self.v * \
+            self.sym_factor*d.dx
+
+        # Allocate memory for Matric and Vector objects.
+        A1 = d.PETScMatrix()
+        B = d.PETScVector()
+
+        # Start iterations.
         i = 0
         du_norm = 1
-        while du_norm > self.tol_du and i < self.maxiter:
+        while (du_norm > tol_du or i < miniter) and i < maxiter:
             i += 1
 
-            A1 = d.assemble((self.n + 1)*pow(self.field, -self.n - 2)*self.u *
-                            self.v*self.sym_factor*d.dx)
-            B = d.assemble((self.n + 2)*pow(self.field, -self.n - 1)*self.v *
-                           self.sym_factor*d.dx)
+            d.assemble(UFL_A1, tensor=A1)
+            d.assemble(UFL_B, tensor=B)
 
-            A = A0 + A1
+            A = self.alpha*self.M + A1
             L = B - F
 
             [bc.apply(A, L) for bc in Dirichlet_BCs]  # Apply Dirichlet bc.
 
-            solver.solve(A, u.vector(), L)
+            d.solve(A, u.vector(), L)
             du.vector()[:] = u.vector() - self.field.vector()
-            self.field.assign(self.relaxation_parameter*u +
-                              (1 - self.relaxation_parameter)*self.field)
+            self.field.assign(relaxation_parameter*u +
+                              (1 - relaxation_parameter)*self.field)
 
             du_norm = d.norm(du.vector(), 'linf')
 
@@ -286,22 +295,14 @@ class FieldSolver(object):
 
         return None
 
-    def newton(self, solver_method="cg", preconditioner="default",
-               display_progress=True, BCs=None):
+    def newton(self, display_progress=True, BCs=None, tol_du=1e-14,
+               relaxation_parameter=1.0, miniter=0, maxiter=1000):
         '''
         Use Newton method to solve for the chameloen field throughout
         self.mesh according to the parameters, self.n, self.alpha and self.p.
 
         Parameters
         ----------
-        solver_method : str, optional
-            Method applied by FEniCS to solve the linear approximation in each
-            of the iterative steps. For up-to-date list use
-            dolfin.list_linear_solver_methods(). The default is "cg".
-        preconditioner : str, optional
-            Preconditioner applied to the linear calculation. For up-to-date
-            list use dolfin.list_krylov_solver_preconditioners().
-            The default is "default".
         display_progress : bool, optional
             If true then current progress of solver, including number of
             iterations and larest change in field value, will be printed.
@@ -318,6 +319,21 @@ class FieldSolver(object):
             defaults are used which isno boundary condition is applied for
             Dirichlet and zero for Neumann. If BCs is None then the default is
             used for all boundaries. The default is None.
+        tol_du : float, optional
+            Absolute tolerence of solver. If maximum difference in solution
+            from one iteration to the next is less then 'tol_du', then it is
+            considered to have converged. The default is 1e-14.
+        relaxation_parameter : float, optional
+            Controls the speed and stability of convergence since When
+            updating the solution bwteen iterations it is done as
+            (w*f_new + (1-w)*f_old), where w is the relaxation_parameter.
+            Values should range from (0.0, 1.0). The default is 1.0.
+        miniter : int, optional
+            Minimum number of iterations solver can perform before it can
+            terminate. The default is 0.
+        maxiter : int, optional
+            Maximum number of iterations solver can perform.
+            The default is 1000.
 
         Returns
         -------
@@ -325,15 +341,7 @@ class FieldSolver(object):
 
         '''
 
-        solver = d.KrylovSolver(solver_method, preconditioner)
-        prm = solver.parameters
-        prm['absolute_tolerance'] = self.tol_du
-        prm['relative_tolerance'] = self.tol_rel_du
-        prm['maximum_iterations'] = self.maxiter
-
         du = d.Function(self.V)
-        A0 = d.assemble(d.dot(d.grad(self.u), d.grad(self.v)) *
-                        self.sym_factor*d.dx)
 
         # Apply Dirichlet and Neumann boundary conditions.
         Dirichlet_BCs = []
@@ -368,25 +376,34 @@ class FieldSolver(object):
         else:
             F = self.P
 
+        # Preallocating the UFL form.
+        UFL_A1 = (self.n + 1)*pow(self.field, -self.n - 2)*self.u*self.v * \
+            self.sym_factor*d.dx
+
+        UFL_B = -self.alpha*d.dot(d.grad(self.field), d.grad(self.v)) * \
+            self.sym_factor*d.dx \
+            + pow(self.field, -self.n - 1)*self.v*self.sym_factor*d.dx
+
+        # Allocate memory for Matric and Vector objects.
+        A1 = d.PETScMatrix()
+        B = d.PETScVector()
+
+        # Start iterations.
         i = 0
         du_norm = 1
-        while du_norm > self.tol_du and i < self.maxiter:
+        while (du_norm > tol_du or i < miniter) and i < maxiter:
             i += 1
 
-            A1 = d.assemble((self.n + 1)*pow(self.field, -self.n - 2)*self.u *
-                            self.v*self.sym_factor*d.dx)
-            B = d.assemble(-self.alpha*d.dot(d.grad(self.field),
-                                             d.grad(self.v))*self.sym_factor *
-                           d.dx + pow(self.field, -self.n - 1)*self.v *
-                           self.sym_factor*d.dx)
+            d.assemble(UFL_A1, tensor=A1)
+            d.assemble(UFL_B, tensor=B)
 
-            A = self.alpha*A0 + A1
+            A = self.alpha*self.M + A1
             L = B - F
 
             [bc.apply(A, L) for bc in Dirichlet_BCs]  # Apply Dirichlet bc.
 
-            solver.solve(A, du.vector(), L)
-            self.field.vector()[:] += self.relaxation_parameter*du.vector()
+            d.solve(A, du.vector(), L)
+            self.field.vector()[:] += relaxation_parameter*du.vector()
 
             du_norm = d.norm(du.vector(), 'linf')
 
@@ -401,7 +418,8 @@ class FieldSolver(object):
         return None
 
     def calc_field_grad_vector(self, solver_method="cg",
-                               preconditioner="jacobi"):
+                               preconditioner="jacobi",
+                               tol_du=1e-14, tol_rel_du=1e-10, maxiter=1000):
         '''
         Calculate the field vector gradient of self.field and stores it as
         'self.field_grad'.
@@ -416,6 +434,15 @@ class FieldSolver(object):
             Preconditioner applied to the linear calculation. For up-to-date
             list use dolfin.list_krylov_solver_preconditioners().
             The default is "jacobi".
+        tol_du : float, optional
+            dolfin.KrylovSolver() parameter - absolute error.
+            The defualt is 1e-14.
+        rel_tol_du : float, optional
+            dolfin.KrylovSolver() parameter - relative error.
+            The defualt is 1e-10.
+        maxiter : int, optional
+            dolfin.KrylovSolver() parameter - maximum iterations.
+            The defualt is 1e-14.
 
         Returns
         -------
@@ -428,9 +455,9 @@ class FieldSolver(object):
 
         solver = d.KrylovSolver(solver_method, preconditioner)
         prm = solver.parameters
-        prm['absolute_tolerance'] = self.tol_du
-        prm['relative_tolerance'] = self.tol_rel_du
-        prm['maximum_iterations'] = self.maxiter
+        prm['absolute_tolerance'] = tol_du
+        prm['relative_tolerance'] = tol_rel_du
+        prm['maximum_iterations'] = maxiter
 
         A = d.assemble(d.inner(self.u_vector, self.v_vector) *
                        self.sym_factor*d.dx)
@@ -442,7 +469,8 @@ class FieldSolver(object):
 
         return None
 
-    def calc_field_grad_mag(self, solver_method="cg", preconditioner="jacobi"):
+    def calc_field_grad_mag(self, solver_method="cg", preconditioner="jacobi",
+                            tol_du=1e-14, tol_rel_du=1e-10, maxiter=1000):
         '''
         Calculate the magnitude of the field gradient of self.field and stores
         it as 'self.field_grad_mag'. Is equivalent to |self.field_grad_vector|.
@@ -457,6 +485,15 @@ class FieldSolver(object):
             Preconditioner applied to the linear calculation. For up-to-date
             list use dolfin.list_krylov_solver_preconditioners().
             The default is "jacobi".
+        tol_du : float, optional
+            dolfin.KrylovSolver() parameter - absolute error.
+            The defualt is 1e-14.
+        rel_tol_du : float, optional
+            dolfin.KrylovSolver() parameter - relative error.
+            The defualt is 1e-10.
+        maxiter : int, optional
+            dolfin.KrylovSolver() parameter - maximum iterations.
+            The defualt is 1e-14.
 
         Returns
         -------
@@ -469,65 +506,20 @@ class FieldSolver(object):
 
         solver = d.KrylovSolver(solver_method, preconditioner)
         prm = solver.parameters
-        prm['absolute_tolerance'] = self.tol_du
-        prm['relative_tolerance'] = self.tol_rel_du
-        prm['maximum_iterations'] = self.maxiter
+        prm['absolute_tolerance'] = tol_du
+        prm['relative_tolerance'] = tol_rel_du
+        prm['maximum_iterations'] = maxiter
 
-        b = d.assemble(d.sqrt(d.inner(d.grad(self.field),
-                                      d.grad(self.field)))*self.v *
-                       self.sym_factor*d.dx)
+        grad = d.grad(self.field)
+        b = d.assemble(d.sqrt(d.inner(grad, grad))*self.v*self.sym_factor*d.dx)
 
         self.field_grad_mag = d.Function(self.V)
         solver.solve(self.A, self.field_grad_mag.vector(), b)
 
         return None
 
-    def calc_field_residual(self, solver_method="richardson",
-                            preconditioner="icc"):
-        '''
-        Inputs 'self.field' into the equation of motion to get the strong
-        residual of the solution and stores it as 'self.residual'.
-
-        Parameters
-        ----------
-        solver_method : str, optional
-            Method applied by FEniCS to solve the linear approximation in each
-            of the iterative steps. For up-to-date list use
-            dolfin.list_linear_solver_methods(). The default is "richardson".
-        preconditioner : str, optional
-            Preconditioner applied to the linear calculation. For up-to-date
-            list use dolfin.list_krylov_solver_preconditioners().
-            The default is "icc".
-
-        Returns
-        -------
-        None.
-
-        '''
-
-        if self.field is None:
-            self.picard()
-
-        if self.field_grad is None:
-            self.calc_field_grad_vector()
-
-        solver = d.KrylovSolver(solver_method, preconditioner)
-        prm = solver.parameters
-        prm['absolute_tolerance'] = self.tol_du
-        prm['relative_tolerance'] = self.tol_rel_du
-        prm['maximum_iterations'] = self.maxiter
-
-        b = d.assemble(self.alpha*d.div(self.field_grad)*self.v *
-                       self.sym_factor*d.dx + pow(self.field, -self.n-1) *
-                       self.v*self.sym_factor*d.dx - self.p*self.v *
-                       self.sym_factor*d.dx)
-
-        self.residual = d.Function(self.V)
-        solver.solve(self.A, self.residual.vector(), b)
-
-        return None
-
-    def calc_laplacian(self, solver_method="richardson", preconditioner="icc"):
+    def calc_laplacian(self, solver_method="richardson", preconditioner="icc",
+                       tol_du=1e-14, tol_rel_du=1e-10, maxiter=1000):
         '''
         Calculates the Laplacian of 'self.field' and stores it as
         'self.laplacian'.
@@ -542,6 +534,15 @@ class FieldSolver(object):
             Preconditioner applied to the linear calculation. For up-to-date
             list use dolfin.list_krylov_solver_preconditioners().
             The default is "icc".
+        tol_du : float, optional
+            dolfin.KrylovSolver() parameter - absolute error.
+            The defualt is 1e-14.
+        rel_tol_du : float, optional
+            dolfin.KrylovSolver() parameter - relative error.
+            The defualt is 1e-10.
+        maxiter : int, optional
+            dolfin.KrylovSolver() parameter - maximum iterations.
+            The defualt is 1e-14.
 
         Returns
         -------
@@ -549,19 +550,77 @@ class FieldSolver(object):
 
         '''
 
-        if self.field_grad is None:
-            self.calc_field_grad_vector()
+        solver = d.KrylovSolver(solver_method, preconditioner)
+        prm = solver.parameters
+        prm['absolute_tolerance'] = tol_du
+        prm['relative_tolerance'] = tol_rel_du
+        prm['maximum_iterations'] = maxiter
+
+        n = d.FacetNormal(self.mesh)
+        ds = d.Measure('ds', domain=self.mesh,
+                       subdomain_data=self.p.boundary)
+
+        G = d.assemble(d.dot(d.grad(self.field), n)*self.v*self.sym_factor*ds
+                       ) - self.M*self.field.vector()
+
+        self.laplacian = d.Function(self.V)
+        solver.solve(self.A, self.laplacian.vector(), G)
+
+        return None
+
+    def calc_field_residual(self, solver_method="richardson",
+                            preconditioner="icc",
+                            tol_du=1e-14, tol_rel_du=1e-10, maxiter=1000):
+        '''
+        Inputs 'self.field' into the equation of motion to get the strong
+        residual of the solution and stores it as 'self.residual'.
+
+        Parameters
+        ----------
+        solver_method : str, optional
+            Method applied by FEniCS to solve the linear approximation in each
+            of the iterative steps. For up-to-date list use
+            dolfin.list_linear_solver_methods(). The default is "richardson".
+        preconditioner : str, optional
+            Preconditioner applied to the linear calculation. For up-to-date
+            list use dolfin.list_krylov_solver_preconditioners().
+            The default is "icc".
+        tol_du : float, optional
+            dolfin.KrylovSolver() parameter - absolute error.
+            The defualt is 1e-14.
+        rel_tol_du : float, optional
+            dolfin.KrylovSolver() parameter - relative error.
+            The defualt is 1e-10.
+        maxiter : int, optional
+            dolfin.KrylovSolver() parameter - maximum iterations.
+            The defualt is 1e-14.
+
+        Returns
+        -------
+        None.
+
+        '''
+
+        if self.field is None:
+            self.picard()
 
         solver = d.KrylovSolver(solver_method, preconditioner)
         prm = solver.parameters
-        prm['absolute_tolerance'] = self.tol_du
-        prm['relative_tolerance'] = self.tol_rel_du
-        prm['maximum_iterations'] = self.maxiter
+        prm['absolute_tolerance'] = tol_du
+        prm['relative_tolerance'] = tol_rel_du
+        prm['maximum_iterations'] = maxiter
 
-        b = d.assemble(d.div(self.field_grad)*self.v*self.sym_factor*d.dx)
+        n = d.FacetNormal(self.mesh)
+        ds = d.Measure('ds', domain=self.mesh,
+                       subdomain_data=self.p.boundary)
 
-        self.laplacian = d.Function(self.V)
-        solver.solve(self.A, self.laplacian.vector(), b)
+        b = d.assemble(
+            d.dot(d.grad(self.field), n)*self.v*self.sym_factor*ds
+            + ((pow(self.field, -self.n-1)-self.p)/self.alpha) *
+            self.v*self.sym_factor*d.dx) - self.M*self.field.vector()
+
+        self.residual = d.Function(self.V)
+        solver.solve(self.A, self.residual.vector(), b)
 
         return None
 
@@ -581,7 +640,8 @@ class FieldSolver(object):
         return None
 
     def calc_potential_derivative(self, solver_method="richardson",
-                                  preconditioner="icc"):
+                                  preconditioner="icc", tol_du=1e-14,
+                                  tol_rel_du=1e-10, maxiter=1000):
         '''
         Calculate the derivative of the field potencial of 'self.field', which
         is equivalent to 'self.field^{-(self.n+1)}', and saves it as
@@ -597,6 +657,15 @@ class FieldSolver(object):
             Preconditioner applied to the linear calculation. For up-to-date
             list use dolfin.list_krylov_solver_preconditioners().
             The default is "icc".
+        tol_du : float, optional
+            dolfin.KrylovSolver() parameter - absolute error.
+            The defualt is 1e-14.
+        rel_tol_du : float, optional
+            dolfin.KrylovSolver() parameter - relative error.
+            The defualt is 1e-10.
+        maxiter : int, optional
+            dolfin.KrylovSolver() parameter - maximum iterations.
+            The defualt is 1e-14.
 
         Returns
         -------
@@ -609,9 +678,9 @@ class FieldSolver(object):
 
         solver = d.KrylovSolver(solver_method, preconditioner)
         prm = solver.parameters
-        prm['absolute_tolerance'] = self.tol_du
-        prm['relative_tolerance'] = self.tol_rel_du
-        prm['maximum_iterations'] = self.maxiter
+        prm['absolute_tolerance'] = tol_du
+        prm['relative_tolerance'] = tol_rel_du
+        prm['maximum_iterations'] = maxiter
 
         b = d.assemble(pow(self.field, -self.n-1)*self.v*self.sym_factor*d.dx)
 

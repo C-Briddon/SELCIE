@@ -9,6 +9,7 @@ Solve the chameleon field for a sphere and infinitely long cylinder inside a
 vacuum.
 
 To generate mesh run 'CreateMesh_Circle_in_Vacuum.py'.
+
 """
 import numpy as np
 import dolfin as d
@@ -84,11 +85,8 @@ s_cylinder = FieldSolver(alpha, n, density_profile=p_cylinder)
 
 
 # Set tolerance on field solutions and solve for above problems.
-s_sphere.tol_du = 1e-10
-s_cylinder.tol_du = 1e-10
-
-s_sphere.picard()
-s_cylinder.picard()
+s_sphere.picard(tol_du=1e-10)
+s_cylinder.picard(tol_du=1e-10)
 
 
 # Plot calculated value against the analytic solution and measure difference.

@@ -64,8 +64,7 @@ if __name__ == "__main__":
 
         # Solve for field.
         solver = FieldSolver(alpha=1, n=1, density_profile=p)
-        solver.tol_du = 1e-12
-        solver.picard(BCs=[g])
+        solver.picard(BCs=[g], tol_du=1e-12)
 
         # Plot field and gradient throughout doamin and on the boundary.
         solver.plot_results(field_scale='linear')

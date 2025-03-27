@@ -1,0 +1,191 @@
+----------- SELCIE LOGBOOK -----------
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.8.0 (27/03/25)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Added 'LOGBOOK' to record changes made between code versions.
+
+# Corrected mistake in calculating Laplacian. This mistake would have affected results from 'SolverChameleon.calc_laplacian()' and 'SolverChameleon.calc_residual()' when in 1D or 2D and not using "translational symmetry".
+
+# Default degree of FEM function space is now 2 (deg_V=2). This was done to eliminate noise at the boundaries when the Laplacian is calculated. Will also affect code speed negatively in exchange for improved accuracy. Value of 'deg_V' can still be reassigned to 1 manually.
+
+# Included new example code 'Examples/Analytic_solution_parallel_plates.py', which compares numeric results obtained from SELCIE to the exact analytic result of two parallel plates.
+
+# Separated dolfin.assemble() and function forms (UFL) in both 'SolverChameleon.picard()' and 'SolverChameleon.newton'. This improves run time since UFL's are not recalculated multiple times and also reduces memory usage by rewriting the assembled objects instead of constructing a new one from scratch.
+
+# Removed arguments 'solver_method' and 'preconditioner' from functions 'SolverChameleon.picard()' and 'SolverChameleon.newton'. Reason is because default FEinCS solvers gave smaller residuals and quicker run time then 'dolfin.KrylovSolver()' used previously.
+
+# Added arguments 'tol_du', 'relaxation_parameter', 'miniter' and 'maxiter' to functions 'SolverChameleon.picard()' and 'SolverChameleon.newton'. Some of these are replacing corresponding class objects.
+
+# For functions in 'SolverChameleon' : 'calc_field_grad_vector()', 'calc_field_grad_mag()', 'calc_laplacian()', 'calc_field_residual()', and 'calc_potential_derivative()', added arguments 'tol_du', 'tol_rel_du' and 'maxiter'.
+
+# From 'SolverChameleon', removed class objects 'relaxation_parameter', 'tol_du', 'tol_rel_du', and 'maxiter'. These were rendered obsolete due to above changes.
+
+# Minor aesthetic changes.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.7.1 (11/10/24)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Updated gmsh version to 4.13.1.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.7.0 (09/10/24)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Added new argument to 'MeshingTools()' called 'display_messages', which allows the user to turn gmsh messages on or off (previously messages were always off).
+
+# Renamed argument in 'MeshingTools.construct_boundary()' from 'holes' to 'embed'.
+
+# Modified 'MeshingTools.points_surface()' and 'MeshingTools.points_volume()' to have new argument ‘embed’, which allows existing shapes to be automatically embedded into the new one being constructed.
+
+# Modified 'MeshTools.points_to_volume()' to include new argument 'remove_contours', so user can control whether contours used in construction are retained on the final shape (before they were always removed).
+
+# Modified 'MeshingTools.generate_mesh()' and 'MeshingTools.msh_2_xdmf()' to work for 1D meshes, and including the new functions 'MeshingTools.points_to_curve()', and 'MeshingTools.create_1D_line()' which allow the adding of a 1D object.
+
+# Modified 'SolverChameleon' to work with 1D meshes. This includes symmetries from 3D to 1D, and including a 1D plots in 'SolverChameleon.plot_results()'.
+
+# Added completion message to 'SolverChameleon.picard()' and 'SolverChameleon.newton()', to be printed when 'display_progress=True'.
+
+# For 2D meshes the symmetry 'cylinder slice' is now 'translation symmetry' to make it clearer, although 'cylinder slice' is still excepted.
+
+# Improved error message for user incorrect symmetry label so valid names are printed out.
+
+# Modified 'FieldSolver.plot_results()' so if used in 3D, a warning message stating 'FieldSolver.plot_results()' does not currently work in 3D." will be printed followed by the function terminating.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.6.1 (23/05/24)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Updated paper reference in 'README.md'.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.6.0 (23/05/24)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Updated 'DensityProfiles.py' and 'SolverChameleon.py' so that boundaries can be marked for different boundary conditions (Dirichlet and or Neumann).
+
+# Introduced new example scripts to demonstrate the boundary condition features ('Boundary_Conditions_Example.py', 'Boundary_Conditions_Test_Dirichlet.py', and 'Boundary_Conditions_Test_Neumann.py').
+
+# Meshes and field solutions can now be saved and accessed from a chosen directory, as an alternate to the current directory.
+
+# Made 'MT.msh_2_xdmf' terminate if search folder does not exist. Introduced self.field_min to 'SolverChameleon.py'.
+
+# Minor aesthetic changes.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.5.4 (03/08/23)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Updated version of gmsh used in 'environment.yml'.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.5.4 (23/03/23)  |--------------------------------------------------------------------------------------------------------------- 
+ # Added 'symmetry' option to MeshingTools.construct_boundary(). This option allows the created surface to be cut along the vertical or horizontal axis. This is recommended when using a 2D mesh with rotational symmetry.
+ 
+ # Changed argument name for MeshingTools.create_background_mesh() from 'mesh_halve' to 'symmetry'.
+ 
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.5.3 (17/03/23)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Rotationally symmetric field solutions from 2D meshes found to have some noise close to axis of rotation. To avoid this noise the field should be calculated using a mesh cut in half along the axis of rotation. The function MeshingTools.create_background_mesh() has been updated to include the option of making half of the background for both 2D and 3D meshes.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.5.2 (05/11/22)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Rotationally symmetric field solutions from 2D meshes found to have some noise close to axis of rotation. To avoid this noise the field should be calculated using a mesh cut in half along the axis of rotation. The function MeshingTools.create_background_mesh() has been updated to include the option of making half of the background for both 2D and 3D meshes.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.5.1 (14/09/22)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Fixed bug in 'MeshingTools.construct_boundary()' that causes an error if top of source is flat, and added error message for if source and/or 'd' is too small. Also modified 'MeshingTools.msh_2_xdmf()' so will not crash if filename=None.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.5.0 (11/07/22)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Replaced all instances of math.dist() with new function, dist_2D(), to make SELCIE compatible with versions of python older than 3.8.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.4.1 (17/06/22)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Corrected minor error in MeshingTools.construct_boundary() that in some cases cause it to break.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.4.0 (24/05/22)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Added second example plot to 'README.md'.
+
+# Added example images.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.4.0 (20/05/22)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Added initial condition code and example. Using this the user can set their own initial conditions.
+
+# Fixed bug where MeshingTools.points_2_surface() was returning value not in a list.
+
+# Added clarifications to examples stating if another example must be used first and if so which one.
+
+# Added new example for MeshingTools.points_2_volume().
+
+# Replaced FieldSolver.measure_fifth_force with FieldSolver.measure_function(), which can be used to find the maximum of any inputted function (not just self.field_grad_mag) and does not calculate vertex distances but instead measures values either in the entire subdomain or only along its boundary.
+
+# Altered ellipse and Legendre examples to utalise the new function.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.3.1 (07/04/22)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Fixed bug that caused crash if MeshingTools.gennerate_mesh() was used with only one surface.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.3.0 (21/03/22)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Added 'MeshingTools.construct_boundary()'. Added new bool argument to 'FieldSolver.picard()' and 'FieldSolver.newton()' called 'display_progress'. Relabelled 'MeshingTools.source' and 'MeshingTools.source_number' to 'MeshingTools.subdomains' and 'MeshingTools.shape_number', respectivly. Rewrote 'MeshingTools.create_subdomains()' slighly. Added code to the beginning of 'MeshingTools.generate_mesh()' that uses the 'fragment()' function in gmsh to ensure the mesh sections do not overlap and there boundaries are connected.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.2.1 (01/03/22)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Corrected 'MeshTools.legendre_shape_components()' so 'positive' and 'negative' shapes are labelled the right way round. Also changed how 'MeshingTools.construct_legendre_mesh_2D()' treats holes. Now if 'include_holes=False', any negative R-value is ignored. This change only makes a difference if parts of the holes do not overlap with the regions defined by posative R-values.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.2.0 (07/02/22)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Added example demonstrating how to construct an embedded density profile using multiple functions. Also altered FieldSolver.plot_results() so if quantity trying to be plotted has not been calculated, will simply return message warning of such rather than terminating (so other plots can still be generated).
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.1.1 (24/01/22)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Added missing code in 'ChameleonSolver.plot_results()' that plots the field profile. Also altered function to output a list of the figures generated.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.1.1 (05/01/22)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Update '.gitignore'.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.1.0 (13/12/21)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Moved Legendre shape creation code from examples into 'Misc.py' and 'MeshingTools.py'. Also improved code so it cannot construct shapes with points that are too close together (so would result in an error). This was done using a new function 'MeshingTools.constrain_distance()', that removes points from a list so neighbouring points are further away then the set minimum allowed distance.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.0.2 (29/11/21)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Update 'setup.py'.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.0.1 (12/11/21)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Update 'README.md'.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.0.1 (11/11/21)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Added citation to 'README.md'.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.0.1 (05/11/21)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Added setup file and changed how files in 'examples' call the 'SELCIE' source code. 'Saved Meshes' directory will now only be created if a mesh is about to be saved and when generating a mesh a subdomain will be generated if the user has not done so. This is to prevent 'msh_to_xdmf' from crashing if the user did not create a subdomain.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.0.0 (04/11/21)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Added setup file and changed how files in 'examples' call the 'SELCIE' source code.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
