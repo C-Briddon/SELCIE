@@ -64,9 +64,9 @@ s.plot_results(density_scale='linear')
 # Solve for field and find position on boundary where fifth force is maximised.
 s.picard()
 s.calc_field_grad_mag()
-field_grad, probe_point = s.measure_function(s.field_grad_mag, subdomain=2,
-                                             check_boundary_only=True,
-                                             constraint=constraint)
+field_grad, probe_point = s.maximise_function(s.field_grad_mag, subdomain=2,
+                                              check_boundary_only=True,
+                                              constraint=constraint)
 
 s.plot_results(field_scale='log', grad_scale='log')
 plt.plot(probe_point[0], probe_point[1], 'rx')

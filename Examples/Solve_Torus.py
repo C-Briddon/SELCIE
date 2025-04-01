@@ -69,7 +69,7 @@ def solve_torus_3D():
 
     # Setup problem and solve.
     s3D = FieldSolver(alpha, n, density_profile=p_3D)
-    s3D.newton()
+    s3D.picard()
 
     return s3D
 

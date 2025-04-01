@@ -1,4 +1,25 @@
------------ SELCIE LOGBOOK -----------
+---------------------------------------------------------------------------------------------------------------|    SELCIE LOGBOOK   |---------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------|  v1.9.0 (01/04/25)  |--------------------------------------------------------------------------------------------------------------- 
+
+# Removed 'SolverChameleon.newton()' since was not working with non-zero Neumann boundary conditions.
+
+# Added to 'MeshingTools' the new functions 'add_points()' and 'embed_lower_dimension_shape()' to allow embedding of points, lines, and surfaces into higher dimensional meshes.
+
+# Added new example 'Embedded_lower_dimesional_objects_into_meshes.py'.
+
+# If 'MeshingTools()' is called while gmsh is already initialised, will clear previous session before proceeding.
+
+# Modify 'MeshingTools.generate_mesh()' so it tells you where the intersection is, so it is easier to fix.
+
+# Using 'MeshingTools.generate_mesh(show_mesh=True)' in 1D the shown mesh does not show the correct amount of vertices. To allow user to check refinement the code will now also plot a figure showing line length as a function of x.
+
+# Renamed 'SolverChameleon.measure_function()' to 'SolverChameleon.maximise_function()'. This better describes what the function actually does.
+
+# 'MeshingTools.create_subdomain()' can now accept 'None' values for argument 'NumPointsPerCurve'. New default value is 'NumPointsPerCurve=None'.
+
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------|  v1.8.0 (27/03/25)  |--------------------------------------------------------------------------------------------------------------- 
 

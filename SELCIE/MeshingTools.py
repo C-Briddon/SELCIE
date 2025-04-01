@@ -13,8 +13,10 @@ import sys
 import gmsh
 import meshio
 import numpy as np
+
 from math import hypot
 from SELCIE.Misc import legendre_R
+from matplotlib.pyplot import figure, ylabel, xlabel, plot, show
 
 
 def dist_2D(a, b):
@@ -71,12 +73,23 @@ class MeshingTools():
         self.geom = gmsh.model.occ
 
         # Open GMSH window and set whether GMSH messgaes should be displayed.
-        gmsh.initialize()
+        if bool(gmsh.isInitialized()) is True:
+            if display_messages is True:
+                gmsh.option.setNumber('General.Verbosity', 5)
+                print("Warning : Gmsh has aleady been initialised.",
+                      "Will clear previous session.")
+            else:
+                gmsh.option.setNumber('General.Verbosity', 1)
 
-        if display_messages is True:
-            gmsh.option.setNumber('General.Verbosity', 5)
+            gmsh.clear()
+
         else:
-            gmsh.option.setNumber('General.Verbosity', 1)
+            gmsh.initialize()
+
+            if display_messages is True:
+                gmsh.option.setNumber('General.Verbosity', 5)
+            else:
+                gmsh.option.setNumber('General.Verbosity', 1)
 
         return None
 
@@ -121,6 +134,86 @@ class MeshingTools():
             points_new.append(points_list[-1])
 
         return points_new
+
+    def embed_lower_dimension_shape(self, shapes, embed,
+                                    remove_trimmings=False):
+        '''
+        Embed a lower dimensional shape into a higher dimensional one.
+        I.e. point or line into a 2D surface, or for 3D shapes can embed a
+        point, line or surface.
+
+        Parameters
+        ----------
+        shapes : list of tuple
+            List of tuples repressing a groups of shapes. Each tuple contains
+            the dimension and tag of its corresponding shape.
+        embed : list of tuple
+            Objects to be embeded into shapes. Each tuple contains the
+            dimension and tag of its corresponding shape.
+        remove_trimmings : bool, optional
+            If true then any part of embedded objects left outside of 'shapes'
+            afterwards are removed. The default is False.
+
+        Raises
+        ------
+        Exception
+            Objects to be embedded must be of a lower dimension to those in
+            shapes.
+
+        Returns
+        -------
+        new_shapes : list of tuple
+            Contains tuples labelling new shapes.
+
+        '''
+
+        if remove_trimmings:
+            embed, _ = self.geom.intersect(objectDimTags=embed,
+                                           toolDimTags=shapes,
+                                           removeObject=True, removeTool=False)
+
+        # Check dimension of embed objects is lower.
+        for e_i in embed:
+            if e_i[0] >= self.dim:
+                raise Exception(
+                    "Embedded objects must have lower dimension.")
+
+        _, frag = self.geom.fragment(objectDimTags=shapes, toolDimTags=embed)
+
+        new_shapes = []
+        for i, _ in enumerate(shapes):
+            new_shapes += frag[i]
+
+        return new_shapes
+
+    def add_points(self, shapes, points_list):
+        '''
+        Forces mesh vertices inside 'shapes' at the points specified.
+        Note the points will only be added if they lie within region
+        defined by 'shapes'.
+
+        Parameters
+        ----------
+        points_list : list of list
+            List defining the positions where the vertices are to be placed.
+            Each element of the list is to be a list containing three values
+            corresponding to the x, y, & z position of the vertex.
+
+        Returns
+        -------
+        None.
+
+        '''
+
+        Pl = [(0, self.geom.addPoint(p[0], p[1], p[2])) for p in points_list]
+
+        # Remove non-intersecting points.
+        Pl, _ = self.geom.intersect(objectDimTags=Pl, toolDimTags=shapes,
+                                    removeObject=True, removeTool=False)
+
+        self.geom.fragment(objectDimTags=shapes, toolDimTags=Pl)
+
+        return None
 
     def points_to_curve(self, points_list, embed=None):
         '''
@@ -179,6 +272,12 @@ class MeshingTools():
             the dimension and tag of its corresponding shape. These shapes
             will be embedded into the newly generated one. The default is None.
 
+        Raises
+        ------
+        Exception
+            Length of argument 'points_list' must be greater than two.
+            Cannot form a closed surface with only two points.
+
         Returns
         -------
         SurfaceDimTag : tuple
@@ -233,6 +332,13 @@ class MeshingTools():
             List of tuples repressing a group of shapes. Each tuple contains
             the dimension and tag of its corresponding shape. These shapes
             will be embedded into the newly generated one. The default is None.
+
+        Raises
+        ------
+        Exception
+            Each contour in argument 'points_list' must be defined using more
+            than two points. Exception is raised if one or more contours does
+            not satisfy this.
 
         Returns
         -------
@@ -307,6 +413,12 @@ class MeshingTools():
             (symmetry = {'vertical', 'horizontal', None}). If value is None
             then no cut is performed. Recommended for 2D meshes with
             rotational symmetry imposed. The default is None.
+
+        Raises
+        ------
+        Exception
+            If source described by argument 'initial_boundaries' is too small
+            or length to new boundary 'd' is too small, raise exception.
 
         Returns
         -------
@@ -583,7 +695,7 @@ class MeshingTools():
         return None
 
     def create_subdomain(self, CellSizeMin=0.1, CellSizeMax=0.1, DistMin=0.0,
-                         DistMax=1.0, NumPointsPerCurve=1000):
+                         DistMax=1.0, NumPointsPerCurve=None):
         '''
         Creates a subdomain from the shapes currently in an open gmsh window.
         Shapes already present in previous subdomains will not be added to the
@@ -619,8 +731,9 @@ class MeshingTools():
         DistMax : float, optional
             At distances greater than this value the cell size is set to its
             maximum. The default is 1.0.
-        NumPointsPerCurve : int, optional
-            Number of points used to define each curve. The default is 1000.
+        NumPointsPerCurve : int or None, optional
+            Number of points used to define each curve. If 'None' will be
+            automated by gmsh. The default is None.
 
         Returns
         -------
@@ -808,6 +921,11 @@ class MeshingTools():
             If True will open a window to allow viewing of the generated mesh.
             The default is False.
 
+        Raises
+        ------
+        Exception
+            Terminate mesh generation if an overlap occurs.
+
         Returns
         -------
         None.
@@ -819,15 +937,26 @@ class MeshingTools():
 
         # Use fragment to align boundaries and ensure mesh isn't overlapping.
         if self.shape_number > 1:
-            frag = len(self.geom.fragment(self.geom.getEntities(self.dim),
-                                          [])[0])
-            if frag != self.shape_number:
-                print("Displaying mesh because overlap was detected.")
-                print("")
+            shapes = self.geom.getEntities(self.dim)
+            frag = self.geom.fragment(shapes, [])
+            if len(frag[0]) != self.shape_number:
+
+                # Print labels of overlaping shapes.
+                overlap_labels = []
+                for s_i, f_i in zip(shapes, frag[1]):
+                    if len(f_i) != 1:
+                        overlap_labels.append(s_i)
+
+                print()
+                print("Overlap detected in mesh between :", overlap_labels)
+                print("Displaying mesh because of overlap.")
+                print()
+
                 self.geom.synchronize()
                 gmsh.fltk.run()
                 gmsh.clear()
                 gmsh.finalize()
+
                 raise Exception("Mesh generation terminated due to overlap.")
 
         self.geom.synchronize()
@@ -853,7 +982,10 @@ class MeshingTools():
                 gmsh.model.mesh.field.add("Distance", i)
                 gmsh.model.mesh.field.setNumbers(i, boundary_type,
                                                  [b[1] for b in boundary])
-                gmsh.model.mesh.field.setNumber(i, "NumPointsPerCurve", rf[4])
+
+                if rf[4] is not None:
+                    gmsh.model.mesh.field.setNumber(i, "NumPointsPerCurve",
+                                                    rf[4])
 
             # Define threshold fields.
             j = 0
@@ -909,6 +1041,20 @@ class MeshingTools():
                 print("------------------------------------------------------")
                 print("Note :")
                 print("In 1D refinement vertices are pressent but not shown.")
+                print("Will therefore show line length vs x using a plot.")
+                print()
+
+                # Get x-coordinates and then seperation distances.
+                x = gmsh.model.mesh.getNodes(dim=1)[1][::3]
+                x.sort()
+                dx = [abs(x1-x0) for x0, x1 in zip(x[:-1], x[1:])]
+
+                figure()
+                ylabel("Cell size")
+                xlabel("x")
+                plot(x[:-1], dx)
+                show()
+
                 print("------------------------------------------------------")
                 print()
             gmsh.fltk.run()
