@@ -1,4 +1,3 @@
-
 name: SELCIE
 
 channels:
@@ -8,6 +7,7 @@ channels:
 dependencies:
   - python=3.8
   - fenics=2019.1.0
+  - mpich  # Required for Apple Silicon (avoids OpenMPI crash)
   - meshio=4.3.8
   - matplotlib
   - astropy
@@ -17,3 +17,8 @@ dependencies:
 
   - pip:
     - gmsh==4.13.1
+    # Required for Apple Silicon - conda fenics package has broken deps
+    - fenics-ufl==2019.1.0
+    - fenics-ffc==2019.1.0
+    - fenics-fiat==2019.1.0
+    - fenics-dijitso==2019.1.0
