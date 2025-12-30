@@ -171,8 +171,19 @@ class FieldSolver(object):
 
         return None
 
-    def picard(self, display_progress=True, BCs=None, tol_du=1e-14,
-               relaxation_parameter=1.0, miniter=0, maxiter=1000):
+    def picard(
+        self, display_progress=True, BCs=None, tol_du=1e-14,
+        relaxation_parameter=1.0, miniter=0, maxiter=1000,
+        # Choose linear solver: "default" reproduces old behaviour, "krylov" uses CG/GMRES+AMG
+        linear_solver="default",
+        # Krylov options (only used if linear_solver="krylov")
+        krylov_method="cg",
+        krylov_preconditioner="hypre_amg",
+        krylov_rtol=1e-12,
+        krylov_atol=1e-14,
+        krylov_maxiter=20000,
+        show_solver_in_output=False,
+    ):
         '''
         Use Picard method to solve for the chameleon field throughout
         self.mesh according to the parameters, self.n, self.alpha and self.p.
@@ -210,6 +221,33 @@ class FieldSolver(object):
         maxiter : int, optional
             Maximum number of iterations solver can perform.
             The default is 1000.
+        linear_solver : str, optional
+            Linear solver to use. Options are 'default' (reproduces original
+            behaviour using LU decomposition) or 'krylov' (uses iterative
+            Krylov solver with algebraic multigrid preconditioning, typically
+            much faster for large problems). The default is 'default'.
+        krylov_method : str, optional
+            Krylov method to use when linear_solver='krylov'. Options include
+            'cg' (conjugate gradient, for symmetric positive definite systems)
+            or 'gmres' (generalised minimal residual, for general systems).
+            The default is 'cg'.
+        krylov_preconditioner : str, optional
+            Preconditioner for the Krylov solver. Options include 'hypre_amg'
+            (algebraic multigrid from HYPRE library), 'ilu', 'jacobi', etc.
+            The default is 'hypre_amg'.
+        krylov_rtol : float, optional
+            Relative tolerance for Krylov solver convergence.
+            The default is 1e-12.
+        krylov_atol : float, optional
+            Absolute tolerance for Krylov solver convergence.
+            The default is 1e-14.
+        krylov_maxiter : int, optional
+            Maximum number of iterations for the Krylov solver.
+            The default is 20000.
+        show_solver_in_output : bool, optional
+            If True, displays detailed solver output including iteration
+            counts and residuals from the linear solver.
+            The default is False.
 
         Returns
         -------
@@ -233,7 +271,7 @@ class FieldSolver(object):
                     if bc_type == "Dirichlet":
                         Dirichlet_BCs.append(
                             d.DirichletBC(self.V, bc_expression,
-                                          self.p.boundary, i))
+                                        self.p.boundary, i))
 
                     elif bc_type == "Neumann":
                         Neumann_BCs.append((i, bc_expression))
@@ -244,12 +282,11 @@ class FieldSolver(object):
         # If Neumann bc were found construct surface integration element.
         if Neumann_BCs:
             ds = d.Measure('ds', domain=self.mesh,
-                           subdomain_data=self.p.boundary)
+                        subdomain_data=self.p.boundary)
 
             F = self.P - self.alpha*d.assemble(
                 sum([bg*self.v*self.sym_factor*ds(i)
-                     for i, bg in Neumann_BCs]))
-
+                    for i, bg in Neumann_BCs]))
         else:
             F = self.P
 
@@ -260,9 +297,42 @@ class FieldSolver(object):
         UFL_B = (self.n + 2)*pow(self.field, -self.n-1)*self.v * \
             self.sym_factor*d.dx
 
-        # Allocate memory for Matric and Vector objects.
+        # Allocate memory for Matrix and Vector objects.
         A1 = d.PETScMatrix()
         B = d.PETScVector()
+
+        # Optional Krylov solver (constructed once)
+        ksp = None
+        ksp_method_used = krylov_method
+        ksp_pc_used = krylov_preconditioner
+
+        if linear_solver == "krylov":
+            # Build solver with simple robust fallbacks
+            ksp_candidates = [krylov_method, "cg", "gmres", "bicgstab"]
+            pc_candidates = [krylov_preconditioner, "hypre_amg", "petsc_amg", "amg",
+                            "ilu", "icc", "jacobi", "sor", "none", "default"]
+
+            last_err = None
+            for km in ksp_candidates:
+                for pc in pc_candidates:
+                    try:
+                        ksp = d.KrylovSolver(km, pc)
+                        ksp_method_used, ksp_pc_used = km, pc
+                        last_err = None
+                        break
+                    except Exception as e:
+                        last_err = e
+                if ksp is not None:
+                    break
+
+            if ksp is None:
+                raise RuntimeError("Could not create KrylovSolver. Last error: %r" % last_err)
+
+            prm = ksp.parameters
+            prm["relative_tolerance"] = float(krylov_rtol)
+            prm["absolute_tolerance"] = float(krylov_atol)
+            prm["maximum_iterations"] = int(krylov_maxiter)
+            prm["nonzero_initial_guess"] = False
 
         # Start iterations.
         i = 0
@@ -278,15 +348,28 @@ class FieldSolver(object):
 
             [bc.apply(A, L) for bc in Dirichlet_BCs]  # Apply Dirichlet bc.
 
-            d.solve(A, u.vector(), L)
+            if linear_solver == "default":
+                # Original behaviour
+                d.solve(A, u.vector(), L)
+            elif linear_solver == "krylov":
+                # New behaviour
+                ksp.set_operator(A)
+                ksp.solve(u.vector(), L)
+            else:
+                raise ValueError("linear_solver must be 'default' or 'krylov'")
+
             du.vector()[:] = u.vector() - self.field.vector()
             self.field.assign(relaxation_parameter*u +
-                              (1 - relaxation_parameter)*self.field)
+                            (1 - relaxation_parameter)*self.field)
 
             du_norm = d.norm(du.vector(), 'linf')
 
             if display_progress:
-                print('iter=%d: du_norm=%g' % (i, du_norm))
+                if show_solver_in_output and linear_solver == "krylov":
+                    print('iter=%d: du_norm=%g  ksp=(%s,%s)' %
+                        (i, du_norm, ksp_method_used, ksp_pc_used))
+                else:
+                    print('iter=%d: du_norm=%g' % (i, du_norm))
 
         if display_progress:
             print()
