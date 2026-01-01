@@ -70,7 +70,7 @@ s = FieldSolver(alpha, n, density_profile=p)
 
 # Set tolerance on field solutions and solve for above problems.
 t0 = default_timer()
-s.picard()
+s.picard(linear_solver="krylov")
 t1 = default_timer()
 print(f"Solver time: {t1-t0:.2f}s")
 

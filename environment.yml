@@ -5,13 +5,13 @@ channels:
   - defaults
 
 dependencies:
-  - python=3.8
+  - python=3.10
   - fenics=2019.1.0
   - mpich  # Required for Apple Silicon (avoids OpenMPI crash)
   - meshio=4.3.8
   - matplotlib
   - astropy
-  - numpy
+  - numpy<2.0
   - scipy
   - pip
 
