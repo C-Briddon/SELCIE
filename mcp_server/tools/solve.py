@@ -451,12 +451,24 @@ async def handle(arguments: dict) -> list[TextContent]:
         except Exception:
             pass  # Point may be outside mesh
 
+        # Compute field gradient (needed for fifth force)
+        grad_computed = False
+        grad_mag_min = None
+        grad_mag_max = None
+        try:
+            solver.calc_field_grad_vector()
+            solver.calc_field_grad_mag()
+            grad_computed = True
+            if solver.field_grad_mag is not None:
+                grad_mag_min = float(solver.field_grad_mag.vector().min())
+                grad_mag_max = float(solver.field_grad_mag.vector().max())
+        except Exception:
+            pass  # Gradient calculation can fail for some configurations
+
         # Save solution info to session
         solution_id = session.generate_solution_id(custom_id)
 
-        # Store the solver object for later use
-        # (The session stores metadata; actual field data is in solver object)
-        # For now, we'll save the field to HDF5 and store the path
+        # Save field and gradient data to HDF5
         solution_dir = os.path.join(parent_dir, "Saved Solutions")
         os.makedirs(solution_dir, exist_ok=True)
         solution_path = os.path.join(solution_dir, solution_id)
@@ -465,6 +477,16 @@ async def handle(arguments: dict) -> list[TextContent]:
         # Save field to HDF5
         with d.HDF5File(solver.mesh.mpi_comm(), os.path.join(solution_path, "field.h5"), "w") as f:
             f.write(solver.field, "field")
+
+        # Save field gradient (vector) if computed
+        if grad_computed and solver.field_grad is not None:
+            with d.HDF5File(solver.mesh.mpi_comm(), os.path.join(solution_path, "field_grad.h5"), "w") as f:
+                f.write(solver.field_grad, "field_grad")
+
+        # Save gradient magnitude if computed
+        if grad_computed and solver.field_grad_mag is not None:
+            with d.HDF5File(solver.mesh.mpi_comm(), os.path.join(solution_path, "field_grad_mag.h5"), "w") as f:
+                f.write(solver.field_grad_mag, "field_grad_mag")
 
         # Store solution info
         solution_info = SolutionInfo(
@@ -506,6 +528,17 @@ async def handle(arguments: dict) -> list[TextContent]:
                 "mean": field_mean,
                 "at_origin": field_at_origin
             },
+            "gradient_stats": {
+                "computed": grad_computed,
+                "magnitude_min": grad_mag_min,
+                "magnitude_max": grad_mag_max,
+            },
+            "saved_files": {
+                "field": "field.h5",
+                "field_grad": "field_grad.h5" if grad_computed else None,
+                "field_grad_mag": "field_grad_mag.h5" if grad_computed else None,
+            },
+            "solution_path": solution_path,
             "runtime_seconds": round(runtime, 2)
         }
 
