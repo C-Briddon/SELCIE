@@ -1,0 +1,105 @@
+# SELCIE MCP Server - Example Prompts
+
+## calculate_physical_parameters
+
+### Lab experiments
+
+> Calculate the chameleon parameters for a 1cm aluminum sphere (density 2.7 g/cm³) with β=10⁸. The vacuum density is about 10⁻¹⁰ g/cm³.
+
+> What screening regime would a 5mm tungsten bead (19.3 g/cm³) be in with β=10⁶? Assume it's in a vacuum chamber at 10⁻⁸ g/cm³.
+
+> For a tabletop experiment with β=10⁷, Λ=2.4meV, a 2cm steel sphere at 7.8 g/cm³ in vacuum, do I need SELCIE or can I use analytics?
+
+### Astrophysical objects
+
+> What's the screening regime for a solar chameleon with β=1? Use solar core density 150 g/cm³, surface density 10⁻⁶ g/cm³, and radius R_sun.
+
+> Calculate α for a neutron star chameleon: β=1, central density 10¹⁵ g/cm³, radius 10 km.
+
+> For an NFW galaxy halo with β=1, characteristic density 10⁶ M_sun/kpc³, scale radius 20 kpc, what is the screening regime?
+
+### Parameter exploration
+
+> Compare the regimes for β = 1, 10³, 10⁶, 10⁹ with a 1m object at 1 g/cm³.
+
+> How does changing n from 1 to 2 to 4 affect the Compton wavelength for α=1?
+
+> At what β does a 1cm sphere transition from adiabatic to thin-shell regime?
+
+## create_mesh
+
+### Basic geometries
+
+> Create a coarse mesh for a sphere of radius 0.1 in vacuum of radius 1.0
+
+> Create a mesh for an oblate ellipsoid with rx=0.2 and ry=0.1 in vacuum
+
+> Create a shell geometry with inner radius 0.1, outer radius 0.2, and vacuum radius 1.0
+
+> Create a cylinder mesh with radius 0.15 and height 0.4 in vacuum
+
+### Multi-object geometries
+
+> Create a mesh with two spheres - radii 0.12 and 0.08, separated by 0.5, in vacuum of radius 1.0
+
+> Create a sphere near a wall: sphere radius 0.1, wall distance 0.15, wall thickness 0.1, vacuum radius 1.0
+
+### Custom shapes
+
+> Create a hexagonal mesh with vertices at (0.2,0), (0.1,0.173), (-0.1,0.173), (-0.2,0), (-0.1,-0.173), (0.1,-0.173) in vacuum of radius 1.0
+
+> Create a custom star shape from the points file test_data/star.txt in vacuum
+
+### Physics-aware refinement
+
+> Create a sphere mesh with thin shell refinement using lambda_subdomain=0.01
+
+> Create a two-sphere mesh with physics refinement for lambda_subdomain=0.005
+
+> Compare the cell count of a sphere mesh with and without physics refinement (lambda_subdomain=0.01)
+
+### Plain domains
+
+> Create a 2D box mesh with width 2.0 and height 1.5
+
+> Create a disk mesh with radius 1.0
+
+> Create a 3D box with dimensions 2x1.5x1
+
+## plot_mesh
+
+### Basic visualization
+
+> Plot the mesh mesh_001
+
+> Create a sphere mesh and show me what it looks like
+
+> Create an ellipse mesh and visualize it without cell edges
+
+### Comparing meshes
+
+> Create a sphere mesh with and without physics refinement and plot both so I can compare
+
+> Create meshes for sphere, ellipse, and cylinder geometries and show me each one
+
+### Custom plot options
+
+> Plot mesh_001 with a custom title "My Experiment Setup"
+
+> Plot the mesh at high resolution (dpi=300) and save to experiment_mesh.png
+
+> Create a two-sphere mesh and plot it with figure size 10x10 inches
+
+## Combined workflows
+
+### Full setup
+
+> I want to study chameleon screening for a 1cm aluminum sphere with β=10⁷. Calculate the parameters, create an appropriate mesh with physics refinement, and show me the geometry.
+
+> Set up a simulation for two spheres (source: radius 0.1, test mass: radius 0.05, separation 0.3) with thin-shell physics (lambda=0.01). Create the mesh and visualize it.
+
+### Mesh quality iteration
+
+> Create a coarse sphere mesh and plot it. If it looks too coarse, create a medium quality one.
+
+> The thin shell isn't visible in my mesh - recreate it with lambda_subdomain=0.005 and show me the refinement
