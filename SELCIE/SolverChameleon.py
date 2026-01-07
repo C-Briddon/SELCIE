@@ -251,7 +251,11 @@ class FieldSolver(object):
 
         Returns
         -------
-        None.
+        dict
+            Dictionary containing convergence information:
+            - 'converged' (bool): True if du_norm <= tol_du
+            - 'iterations' (int): Number of iterations performed
+            - 'final_du_norm' (float): Final value of du_norm
 
         '''
 
@@ -371,12 +375,21 @@ class FieldSolver(object):
                 else:
                     print('iter=%d: du_norm=%g' % (i, du_norm))
 
+        converged = du_norm <= tol_du
+
         if display_progress:
             print()
-            print("Solver completed.")
+            if converged:
+                print(f"Solver converged in {i} iterations (du_norm={du_norm:.2e} <= tol={tol_du:.2e})")
+            else:
+                print(f"Solver reached max iterations ({i}) without converging (du_norm={du_norm:.2e} > tol={tol_du:.2e})")
             print()
 
-        return None
+        return {
+            "converged": converged,
+            "iterations": i,
+            "final_du_norm": du_norm,
+        }
 
     def calc_field_grad_vector(self, solver_method="cg",
                                preconditioner="jacobi",

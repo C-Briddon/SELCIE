@@ -89,9 +89,9 @@ Parameters:
 
 
 def _symmetry_to_selcie(symmetry: str) -> str:
-    """Convert MCP symmetry to SELCIE symmetry string."""
+    """Convert MCP symmetry to SELCIE DensityProfile symmetry string."""
     mapping = {
-        "axial": "horizontal axis-symmetry",
+        "axial": "vertical axis-symmetry",
         "none": "translation symmetry",
     }
     return mapping.get(symmetry, symmetry)
@@ -399,20 +399,30 @@ async def handle(arguments: dict) -> list[TextContent]:
             initial_field_profiles=initial_field_profiles
         )
 
-        # Run solver (picard iteration)
-        converged = False
-        iterations = 0
-        final_residual = float("inf")
+        # Run solver (picard iteration with optimized linear solver)
+        # Use optimized linear solver for larger meshes, default for smaller
+        if n_cells > 10000:
+            picard_result = solver.picard(
+                display_progress=False,
+                tol_du=tol,
+                relaxation_parameter=relaxation,
+                maxiter=max_iter,
+                linear_solver="krylov",
+                krylov_method="cg",
+                krylov_preconditioner="hypre_amg"
+            )
+        else:
+            picard_result = solver.picard(
+                display_progress=False,
+                tol_du=tol,
+                relaxation_parameter=relaxation,
+                maxiter=max_iter,
+            )
 
-        solver.picard(
-            display_progress=False,
-            tol_du=tol,
-            relaxation_parameter=relaxation,
-            maxiter=max_iter,
-            linear_solver="krylov"
-        )
-        converged = True  # picard doesn't return status, check field via residual
-        iterations = max_iter  # approximate
+        # Extract convergence info from picard
+        converged = picard_result["converged"]
+        iterations = picard_result["iterations"]
+        final_du_norm = picard_result["final_du_norm"]
 
         # Get field statistics
         field_vector = solver.field.vector()
@@ -420,12 +430,16 @@ async def handle(arguments: dict) -> list[TextContent]:
         field_max = float(field_vector.max())
         field_mean = float(np.mean(field_vector.get_local()))
 
-        # Calculate residual
-        solver.calc_field_residual()
-        if solver.residual is not None:
-            res_vector = solver.residual.vector()
-            final_residual = float(d.norm(res_vector, 'linf'))
-            converged = final_residual < tol * 100  # reasonable convergence check
+        # Calculate PDE strong residual (how well the field satisfies the equation)
+        # This is different from du_norm but useful for solution quality assessment
+        pde_residual = None
+        try:
+            solver.calc_field_residual()
+            if solver.residual is not None:
+                res_vector = solver.residual.vector()
+                pde_residual = float(d.norm(res_vector, 'linf'))
+        except RuntimeError:
+            pass  # Can fail for some edge cases
 
         # Get field at specific points
         field_at_origin = None
@@ -461,7 +475,7 @@ async def handle(arguments: dict) -> list[TextContent]:
             n=n,
             converged=converged,
             iterations=iterations,
-            final_residual=final_residual,
+            final_residual=final_du_norm,
             field_min=field_min,
             field_max=field_max
         )
@@ -479,9 +493,10 @@ async def handle(arguments: dict) -> list[TextContent]:
                 "rho_min": density_stats["rho_min"] if density_stats["rho_min"] != float("inf") else None,
                 "rho_max": density_stats["rho_max"] if density_stats["rho_max"] != float("-inf") else None
             },
-            "status": "converged" if converged else "not_converged",
+            "status": "converged" if converged else "max_iterations",
             "iterations": iterations,
-            "final_residual": final_residual,
+            "final_du_norm": final_du_norm,
+            "pde_residual": pde_residual,
             "method_used": actual_method,
             "relaxation_used": relaxation,
             "initial_guess": initial_guess,

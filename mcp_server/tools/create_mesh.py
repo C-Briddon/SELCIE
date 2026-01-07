@@ -953,15 +953,9 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
     )
 
     # Create region name -> marker mapping
-    # Convention: background/vacuum/domain is marker 0, subdomains are 1, 2, ...
-    regions_dict = {}
-    for i, region in enumerate(regions):
-        if region in ("vacuum", "domain"):
-            regions_dict[region] = 0
-        else:
-            # Subdomains get markers 1, 2, ... in order
-            marker = len([r for r in regions[:i] if r not in ("vacuum", "domain")]) + 1
-            regions_dict[region] = marker
+    # SELCIE assigns markers in the order subdomains are created (0, 1, 2, ...)
+    # The regions list is already in creation order from the geometry functions
+    regions_dict = {region: i for i, region in enumerate(regions)}
 
     mesh_info.regions = regions_dict
     session.add_mesh(mesh_info)
