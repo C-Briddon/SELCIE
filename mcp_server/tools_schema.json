@@ -271,8 +271,8 @@
           },
           "mode": {
             "type": "string",
-            "enum": ["radial", "line", "points", "grid"],
-            "description": "Evaluation mode."
+            "enum": ["radial", "line", "points", "grid", "max_in_region"],
+            "description": "Evaluation mode. max_in_region finds extrema within a region with optional min distance from source boundary (useful for fifth force on test mass)."
           },
           "params": {
             "type": "object",
@@ -289,7 +289,11 @@
               "r_range": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
               "z_range": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
               "n_r": {"type": "integer", "minimum": 2},
-              "n_z": {"type": "integer", "minimum": 2}
+              "n_z": {"type": "integer", "minimum": 2},
+              "region": {"type": "string", "description": "Region to sample within, e.g. 'vacuum' (max_in_region mode)"},
+              "min_distance_from": {"type": "string", "description": "Region to keep minimum distance from, e.g. 'object' (max_in_region mode)"},
+              "min_distance": {"type": "number", "minimum": 0, "default": 0, "description": "Minimum distance from the specified region's boundary. Default: 0"},
+              "n_samples": {"type": "integer", "minimum": 10, "default": 1000, "description": "Number of sample points. Default: 1000"}
             }
           },
           "quantities": {
@@ -323,28 +327,6 @@
           }
         },
         "required": ["solution_id"]
-      }
-    },
-    {
-      "name": "compare",
-      "description": "Compare multiple solutions, useful for parameter sweeps or comparing different configurations.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "solution_ids": {
-            "type": "array",
-            "items": {"type": "string"},
-            "minItems": 2,
-            "description": "List of solution IDs to compare."
-          },
-          "metric": {
-            "type": "string",
-            "enum": ["all", "screening", "force", "field"],
-            "description": "Comparison focus. Default: all.",
-            "default": "all"
-          }
-        },
-        "required": ["solution_ids"]
       }
     },
     {
@@ -398,53 +380,6 @@
           }
         },
         "required": ["solution_id", "plot_type"]
-      }
-    },
-    {
-      "name": "sweep",
-      "description": "Run a parameter sweep, solving for multiple values of alpha or n using the same mesh and density configuration.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "mesh_id": {
-            "type": "string",
-            "description": "ID of the mesh to use."
-          },
-          "density": {
-            "type": "object",
-            "description": "Density specification per region (same as solve tool)."
-          },
-          "parameter": {
-            "type": "string",
-            "enum": ["alpha", "n"],
-            "description": "Parameter to sweep."
-          },
-          "values": {
-            "type": "array",
-            "items": {"type": "number"},
-            "minItems": 2,
-            "description": "Parameter values to use."
-          },
-          "n": {
-            "type": "integer",
-            "description": "Fixed n value (if sweeping alpha). Default: 1.",
-            "default": 1
-          },
-          "alpha": {
-            "type": "number",
-            "description": "Fixed alpha value (if sweeping n)."
-          },
-          "solver_options": {
-            "type": "object",
-            "description": "Solver configuration (same as solve tool)."
-          },
-          "analyze_each": {
-            "type": "boolean",
-            "description": "Run analysis on each solution. Default: true.",
-            "default": true
-          }
-        },
-        "required": ["mesh_id", "density", "parameter", "values"]
       }
     },
     {

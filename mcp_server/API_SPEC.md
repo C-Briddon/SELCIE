@@ -760,6 +760,26 @@ On regular grid:
 }
 ```
 
+##### `max_in_region`
+Find maximum/minimum values within a region, with optional minimum distance from another region's boundary (useful for fifth force on a test mass at some distance from a source):
+```json
+{
+  "mode": "max_in_region",
+  "params": {
+    "region": "vacuum",
+    "min_distance_from": "object",
+    "min_distance": 0.1,
+    "n_samples": 1000
+  }
+}
+```
+- `region` (required): Region to sample within (e.g., `"vacuum"`, `"domain"`)
+- `min_distance_from` (optional): Region to keep minimum distance from (e.g., `"object"`, `"sphere_1"`)
+- `min_distance` (optional): Minimum distance from the specified region's boundary. Default: `0`
+- `n_samples` (optional): Number of sample points. Default: `1000`
+
+Returns statistics (max, min, mean) and location of extrema for each requested quantity.
+
 #### Available Quantities
 
 | Quantity | Description |
@@ -799,132 +819,39 @@ On regular grid:
 }
 ```
 
----
-
-### 6. `analyze`
-
-Physical interpretation of the solution.
-
-#### Parameters
-
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `solution_id` | string | Yes | Solution ID |
-| `reference` | string | No | Compare to: `"adiabatic"`, `"thin_shell"`, `"none"` |
-
-#### Returns
-
+**For `max_in_region` mode:**
 ```json
 {
   "solution_id": "solution_001",
-  "alpha": 3.5,
-  "n": 1,
+  "mode": "max_in_region",
+  "region": "vacuum",
+  "min_distance_from": "object",
+  "min_distance": 0.1,
+  "n_samples": 1000,
+  "n_valid_samples": 847,
 
-  "regime": {
-    "classification": "thin_shell",
-    "confidence": 0.92,
-    "description": "Object exhibits thin-shell screening"
-  },
-
-  "screening": {
-    "is_screened": true,
-    "screening_radius": 0.82,
-    "screening_radius_fraction": 0.82,
-    "thin_shell_thickness": 0.18,
-    "thin_shell_fraction": 0.18,
-    "volume_fraction_screened": 0.55
-  },
-
-  "field_values": {
-    "at_center": 0.001,
-    "at_screening_radius": 0.45,
-    "at_surface": 0.92,
-    "at_boundary": 0.98,
-    "background_analytic": 1.0
-  },
-
-  "fifth_force": {
-    "max_value_g": 3.2e-4,
-    "max_location_r": 1.0,
-    "mean_in_shell_g": 1.8e-4,
-    "surface_value_g": 3.2e-4
-  },
-
-  "comparison_to_analytic": {
-    "reference": "adiabatic",
-    "rms_deviation": 0.34,
-    "max_deviation": 0.92,
-    "max_deviation_location": 1.0,
-    "agreement_region": "r < 0.5"
-  },
-
-  "interpretation": "The object has a well-developed thin shell. The inner 82% by radius (55% by volume) is fully screened, with the field matching the adiabatic solution φ = ρ^{-1/2}. In the outer shell (r > 0.82), the field deviates significantly and approaches the background value. The maximum fifth force of 3.2×10⁻⁴ g occurs at the surface."
+  "data": {
+    "fifth_force_g": {
+      "max": 3.2e-4,
+      "max_location": [0.25, 0.0],
+      "min": 1.1e-6,
+      "min_location": [0.95, 0.0],
+      "mean": 4.5e-5
+    },
+    "gradient_magnitude": {
+      "max": 0.12,
+      "max_location": [0.25, 0.0],
+      "min": 0.001,
+      "min_location": [0.95, 0.0],
+      "mean": 0.02
+    }
+  }
 }
 ```
 
 ---
 
-### 7. `compare`
-
-Compare multiple solutions or parameter sweeps.
-
-#### Parameters
-
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `solution_ids` | array | Yes | List of solution IDs to compare |
-| `metric` | string | No | Comparison metric. Default: `"all"` |
-
-#### Returns
-
-```json
-{
-  "solutions": [
-    {
-      "solution_id": "solution_001",
-      "alpha": 0.1,
-      "regime": "adiabatic",
-      "screening_radius": null,
-      "max_fifth_force_g": 1.2e-6
-    },
-    {
-      "solution_id": "solution_002",
-      "alpha": 1.0,
-      "regime": "transition",
-      "screening_radius": 0.65,
-      "max_fifth_force_g": 8.5e-5
-    },
-    {
-      "solution_id": "solution_003",
-      "alpha": 10.0,
-      "regime": "thin_shell",
-      "screening_radius": 0.92,
-      "max_fifth_force_g": 4.1e-4
-    }
-  ],
-
-  "trends": {
-    "screening_radius_vs_alpha": {
-      "fit": "r_s = 1 - C * alpha^{-1/(n+1)}",
-      "C": 0.35
-    },
-    "max_force_vs_alpha": {
-      "scaling": "F_max ∝ alpha^{0.45}"
-    }
-  },
-
-  "regime_boundaries": {
-    "adiabatic_to_transition": 0.3,
-    "transition_to_thin_shell": 3.0
-  },
-
-  "interpretation": "As α increases from 0.1 to 10, the system transitions from adiabatic (field tracks density) through partial screening to thin-shell regime. Screening radius increases from 0 to 92% of object radius. Fifth force increases by factor ~300."
-}
-```
-
----
-
-### 8. `plot`
+### 6. `plot`
 
 Generate visualizations.
 
@@ -1044,51 +971,7 @@ Visualize mesh:
 
 ---
 
-### 9. `sweep`
-
-Run parameter sweep (batch solving).
-
-#### Parameters
-
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `mesh_id` | string | Yes | Mesh ID |
-| `profile_id` | string | Yes | Profile ID |
-| `parameter` | string | Yes | Parameter to sweep: `"alpha"`, `"n"` |
-| `values` | array | Yes | Parameter values |
-| `solver_options` | object | No | Solver configuration |
-| `analyze` | boolean | No | Run analysis on each. Default: true |
-
-#### Returns
-
-```json
-{
-  "sweep_id": "sweep_001",
-  "parameter": "alpha",
-  "n_runs": 10,
-
-  "results": [
-    {"alpha": 0.01, "solution_id": "sol_001", "converged": true, "regime": "adiabatic"},
-    {"alpha": 0.1, "solution_id": "sol_002", "converged": true, "regime": "adiabatic"},
-    {"alpha": 1.0, "solution_id": "sol_003", "converged": true, "regime": "transition"},
-    ...
-  ],
-
-  "summary": {
-    "all_converged": true,
-    "regime_transitions": [
-      {"from": "adiabatic", "to": "transition", "at_alpha": 0.3},
-      {"from": "transition", "to": "thin_shell", "at_alpha": 5.0}
-    ]
-  },
-
-  "total_runtime_seconds": 45.2
-}
-```
-
----
-
-### 10. `get_state`
+### 7. `get_state`
 
 Query current session state.
 
@@ -1115,7 +998,7 @@ None.
 
 ---
 
-### 11. `clear`
+### 8. `clear`
 
 Clear session objects.
 
@@ -1137,7 +1020,7 @@ Clear session objects.
 
 ---
 
-### 12. `get_documentation`
+### 9. `get_documentation`
 
 Get documentation for profiles, geometries, or physics.
 
