@@ -48,7 +48,7 @@ async def run_comparison():
         "mesh_quality": "coarse",
         "physics_params": {
             "alpha": 1e18,
-            "density_contrast": 1e17,
+            "density": {"object": 1e17, "wall": 1e17, "vacuum": 1.0},
             "n": 1,
         },
     })

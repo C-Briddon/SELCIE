@@ -52,11 +52,13 @@
 
 ### Physics-aware refinement
 
-> Create a sphere mesh with thin shell refinement using lambda_subdomain=0.01
+> Create a sphere mesh with thin shell refinement using physics_params with lambda 0.01 for the object
 
-> Create a two-sphere mesh with physics refinement for lambda_subdomain=0.005
+> Create a sphere mesh with physics refinement using α=1e18, n=1, object density 1e17, vacuum density 1.0
 
-> Compare the cell count of a sphere mesh with and without physics refinement (lambda_subdomain=0.01)
+> Create a two-sphere mesh with physics refinement for lambda 0.005 in both spheres
+
+> Compare the cell count of a sphere mesh with and without physics refinement (lambda=0.01 for object)
 
 ### Plain domains
 
@@ -96,13 +98,11 @@
 
 > I want to study chameleon screening for a 1cm aluminum sphere with β=10⁷. Calculate the parameters, create an appropriate mesh with physics refinement, and show me the geometry.
 
-> Set up a simulation for two spheres (source: radius 0.1, test mass: radius 0.05, separation 0.3) with thin-shell physics (lambda=0.01). Create the mesh and visualize it.
+> Set up a simulation for two spheres (source: radius 0.1, test mass: radius 0.05, separation 0.3) with physics refinement (lambda=0.01 for both spheres). Create the mesh and visualize it.
 
 ### Mesh quality iteration
 
 > Create a coarse sphere mesh and plot it. If it looks too coarse, create a medium quality one.
-
-> The thin shell isn't visible in my mesh - recreate it with lambda_subdomain=0.005 and show me the refinement
 
 ## solve
 
@@ -195,8 +195,22 @@
 > 7. Find the max fifth gradient in vacuum at least 0.05 away from ALL other domains (object and wall)
 > 8. Save the plots in this directory
 
-### Parameter comparison
+### Sphere in Vacuum (Physical Parameters)
 
-> Create a sphere_in_vacuum mesh and solve for the chameleon field with three different α values: 0.5, 3.5, and 10.0. Use object density 2.7e10 and vacuum density 1.0 for all cases.
+> I want to simulate the chameleon field around an aluminum sphere in a vacuum chamber, starting from physical parameters.
 >
-> Then create a comparison plot showing all three field profiles on the same graph.
+> Physical setup:
+> - Aluminum sphere: radius 1 cm, density 2.7 g/cm³
+> - Vacuum chamber: radius 10 cm, wall thickness 0.5 cm
+> - Chamber wall: stainless steel, density 8.0 g/cm³
+> - Vacuum: density 10⁻¹⁷ g/cm³ (good lab vacuum)
+> - Chameleon coupling: β = 10⁶, Λ = 2.4 meV, n = 1
+>
+> Please:
+> 1. Calculate the dimensionless parameters (α, ρ̂) using calculate_physical_parameters with the sphere as reference
+> 2. Report the screening regime and Compton wavelengths
+> 3. Create a mesh with physics-aware refinement using the computed parameters
+> 4. Solve for the chameleon field
+> 5. Plot the radial field profile and gradient magnitude
+> 6. Find the maximum fifth force acceleration in the vacuum region (at least 0.5 cm from all surfaces)
+> 7. Convert the result back to physical units (m/s²)

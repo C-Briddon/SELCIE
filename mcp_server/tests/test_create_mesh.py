@@ -233,12 +233,12 @@ class TestCreateMeshPhysicsRefinement:
 
         reset_session()
 
-        # With thin shell physics
+        # With thin shell physics (using lambda dict)
         result_physics = await handle({
             "geometry": "sphere_in_vacuum",
             "params": {"object_radius": 0.1, "vacuum_radius": 1.0},
             "mesh_quality": "coarse",
-            "physics_params": {"lambda_subdomain": 0.01},
+            "physics_params": {"lambda": {"object": 0.01}},
         })
         data_physics = json.loads(result_physics[0].text)
 
@@ -257,7 +257,7 @@ class TestCreateMeshPhysicsRefinement:
             "geometry": "sphere_in_vacuum",
             "params": {"object_radius": 0.1, "vacuum_radius": 1.0},
             "mesh_quality": "coarse",
-            "physics_params": {"lambda_subdomain": 0.00001},  # Extremely thin
+            "physics_params": {"lambda": {"object": 0.00001}},  # Extremely thin
         })
 
         data = json.loads(result[0].text)
@@ -267,12 +267,12 @@ class TestCreateMeshPhysicsRefinement:
 
     @pytest.mark.asyncio
     async def test_lambda_computed_from_alpha_density(self):
-        """Lambda should be auto-computed from alpha and density_contrast."""
+        """Lambda should be auto-computed from alpha and density dict."""
         from tools.create_mesh import handle
         import math
 
         alpha = 1e18
-        density_contrast = 1e17
+        object_density = 1e17
         n = 1
 
         result = await handle({
@@ -281,7 +281,7 @@ class TestCreateMeshPhysicsRefinement:
             "mesh_quality": "coarse",
             "physics_params": {
                 "alpha": alpha,
-                "density_contrast": density_contrast,
+                "density": {"object": object_density, "vacuum": 1.0},
                 "n": n,
             },
         })
@@ -291,20 +291,26 @@ class TestCreateMeshPhysicsRefinement:
         assert "physics_refinement" in data
         assert data["physics_refinement"]["refinement_applied"] is True
 
-        # Verify lambda was computed correctly
+        # Verify lambda was computed correctly for each region
         # λ = √(α / n(n+1)) × ρ^(-(n+2)/(2(n+1)))
-        expected_lambda = math.sqrt(alpha / (n * (n + 1))) * (density_contrast ** (-(n + 2) / (2 * (n + 1))))
-        actual_lambda = data["physics_refinement"]["lambda_subdomain"]
-        assert abs(actual_lambda - expected_lambda) / expected_lambda < 0.01  # Within 1%
+        expected_lambda_object = math.sqrt(alpha / (n * (n + 1))) * (object_density ** (-(n + 2) / (2 * (n + 1))))
+
+        # Check lambda_per_region contains computed values
+        assert "lambda_per_region" in data["physics_refinement"]
+        actual_lambda_object = data["physics_refinement"]["lambda_per_region"]["object"]
+        assert abs(actual_lambda_object - expected_lambda_object) / expected_lambda_object < 0.01  # Within 1%
+
+        # The minimum lambda should be from the densest region (object)
+        assert data["physics_refinement"]["lambda_min_region"] == "object"
 
         # Verify computed_from is included
         assert "computed_from" in data["physics_refinement"]
         assert data["physics_refinement"]["computed_from"]["alpha"] == alpha
-        assert data["physics_refinement"]["computed_from"]["density_contrast"] == density_contrast
+        assert data["physics_refinement"]["computed_from"]["density"]["object"] == object_density
 
     @pytest.mark.asyncio
     async def test_lambda_direct_overrides_computed(self):
-        """Direct lambda_subdomain should be used if provided."""
+        """Direct lambda dict should be used if provided."""
         from tools.create_mesh import handle
 
         result = await handle({
@@ -312,21 +318,22 @@ class TestCreateMeshPhysicsRefinement:
             "params": {"object_radius": 0.1, "vacuum_radius": 1.0},
             "mesh_quality": "coarse",
             "physics_params": {
-                "alpha": 1e18,
-                "density_contrast": 1e17,
-                "lambda_subdomain": 0.05,  # Explicit value
+                "lambda": {"object": 0.05, "vacuum": 0.1},  # Direct values
             },
         })
 
         data = json.loads(result[0].text)
         assert "error" not in data
         assert "physics_refinement" in data
-        # Should use the explicit value, not compute from alpha/density
-        assert data["physics_refinement"]["lambda_subdomain"] == 0.05
+        # Should use the explicit values
+        assert data["physics_refinement"]["lambda_per_region"]["object"] == 0.05
+        assert data["physics_refinement"]["lambda_per_region"]["vacuum"] == 0.1
+        # Minimum should be object (0.05 < 0.1)
+        assert data["physics_refinement"]["lambda_min"] == 0.05
 
     @pytest.mark.asyncio
     async def test_alpha_without_density_no_refinement(self):
-        """Alpha alone without density_contrast should not compute lambda."""
+        """Alpha alone without density dict should not compute lambda."""
         from tools.create_mesh import handle
 
         result = await handle({
@@ -335,7 +342,7 @@ class TestCreateMeshPhysicsRefinement:
             "mesh_quality": "coarse",
             "physics_params": {
                 "alpha": 1e18,
-                # No density_contrast
+                # No density dict
             },
         })
 
@@ -343,6 +350,38 @@ class TestCreateMeshPhysicsRefinement:
         assert "error" not in data
         # No physics refinement should be applied
         assert "physics_refinement" not in data
+
+    @pytest.mark.asyncio
+    async def test_multi_region_refinement(self):
+        """Test refinement with multiple dense regions (sphere + wall)."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "sphere_in_vacuum",
+            "params": {"object_radius": 0.1, "vacuum_radius": 1.0, "wall_thickness": 0.05},
+            "mesh_quality": "coarse",
+            "physics_params": {
+                "alpha": 1e18,
+                "density": {"object": 1e17, "wall": 1e17, "vacuum": 1.0},
+                "n": 1,
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" not in data
+        assert "physics_refinement" in data
+
+        # Should have lambda for all regions
+        lambda_per_region = data["physics_refinement"]["lambda_per_region"]
+        assert "object" in lambda_per_region
+        assert "wall" in lambda_per_region
+        assert "vacuum" in lambda_per_region
+
+        # Object and wall should have same lambda (same density)
+        assert abs(lambda_per_region["object"] - lambda_per_region["wall"]) < 1e-10
+
+        # Vacuum should have much larger lambda (lower density)
+        assert lambda_per_region["vacuum"] > lambda_per_region["object"] * 100
 
 
 class TestCreateMeshCustom2D:

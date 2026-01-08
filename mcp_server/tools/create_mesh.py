@@ -105,6 +105,85 @@ def estimate_physics_refinement(
     }
 
 
+def _extract_density_value(density_spec) -> float | None:
+    """Extract a representative density value from various formats.
+
+    For mesh refinement, we need a single number to compute λ.
+    For non-numeric values, we extract/estimate the maximum density.
+
+    Args:
+        density_spec: Can be:
+            - number: used directly
+            - {"expression": str}: evaluate at sample points, take max
+            - {"file": str, "skip_header": int}: load profile, take max
+
+    Returns:
+        Representative density value, or None if cannot extract
+    """
+    import numpy as np
+
+    if isinstance(density_spec, (int, float)):
+        return float(density_spec)
+
+    if isinstance(density_spec, dict):
+        if "expression" in density_spec:
+            # Evaluate expression at sample points and take max
+            # Use a simple grid to estimate max density
+            expr = density_spec["expression"]
+            try:
+                # Sample points in a reasonable range
+                r_vals = np.linspace(0.001, 1.0, 20)
+                z_vals = np.linspace(-1.0, 1.0, 20)
+                max_rho = 0.0
+
+                for r in r_vals:
+                    for z in z_vals:
+                        x, y = r, z  # For Cartesian expressions
+                        try:
+                            val = eval(expr)
+                            if isinstance(val, (int, float)) and val > max_rho:
+                                max_rho = val
+                        except Exception:
+                            pass
+
+                return max_rho if max_rho > 0 else None
+            except Exception:
+                return None
+
+        elif "file" in density_spec:
+            # Load profile from file and take max
+            try:
+                skip_header = density_spec.get("skip_header", 0)
+                data = np.loadtxt(density_spec["file"], skiprows=skip_header)
+                # Assume density is in second column (first is position)
+                if data.ndim == 1:
+                    return float(np.max(data))
+                else:
+                    return float(np.max(data[:, 1]))
+            except Exception:
+                return None
+
+    return None
+
+
+def _compute_lambda(alpha: float, rho: float, n: int = 1) -> float:
+    """Compute Compton wavelength from physics parameters.
+
+    λ = √(α / n(n+1)) × ρ^(-(n+2)/(2(n+1)))
+
+    Args:
+        alpha: Dimensionless coupling constant
+        rho: Dimensionless density
+        n: Potential power index
+
+    Returns:
+        Compton wavelength λ
+    """
+    import math
+    exponent = -(n + 2) / (2 * (n + 1))
+    return math.sqrt(alpha / (n * (n + 1))) * (rho ** exponent)
+
+
 TOOL_DEFINITION = Tool(
     name="create_mesh",
     description=(
@@ -174,36 +253,36 @@ TOOL_DEFINITION = Tool(
                 "type": "object",
                 "description": (
                     "Physics parameters for automatic thin-shell mesh refinement. "
-                    "RECOMMENDED: Provide alpha and density_contrast - the tool will compute "
-                    "the Compton wavelength and refine the mesh appropriately. "
-                    "Alternatively, provide lambda_subdomain directly if known."
+                    "Option 1: Provide 'lambda' dict mapping region names to Compton wavelengths. "
+                    "Option 2: Provide 'alpha', 'density' dict, and 'n' - lambdas will be computed per region. "
+                    "The mesh will be refined near boundaries of dense regions to resolve thin shells."
                 ),
                 "properties": {
+                    "lambda": {
+                        "type": "object",
+                        "description": (
+                            "Direct specification of Compton wavelength per region. "
+                            "Example: {\"object\": 0.001, \"wall\": 0.002}. "
+                            "If provided, alpha/density are ignored."
+                        ),
+                        "additionalProperties": {"type": "number"},
+                    },
                     "alpha": {
                         "type": "number",
                         "description": (
-                            "Dimensionless coupling constant α. When provided with density_contrast, "
-                            "automatically computes lambda_subdomain = √(α/n(n+1)) × ρ^(-(n+2)/(2(n+1)))"
+                            "Dimensionless coupling constant α. Used with 'density' to compute "
+                            "λ = √(α/n(n+1)) × ρ^(-(n+2)/(2(n+1))) for each region."
                         ),
                     },
-                    "density_contrast": {
-                        "type": "number",
-                        "description": (
-                            "Density ratio ρ_object/ρ_vacuum (dimensionless). "
-                            "Used with alpha to compute Compton wavelength for mesh refinement."
-                        ),
+                    "density": {
+                        "type": "object",
+                        "description": "Dimensionless density ρ̂ = ρ/ρ₀ per region (ρ₀ is the reference density used to compute α). Each key is a region name, value is: number, {expression: str}, or {file: str, skip_header?: int}. For non-numeric values, max density is used to compute λ.",
+                        "additionalProperties": True,
                     },
                     "n": {
                         "type": "integer",
                         "description": "Potential power index (default: 1)",
                         "default": 1,
-                    },
-                    "lambda_subdomain": {
-                        "type": "number",
-                        "description": (
-                            "Compton wavelength in subdomain (same units as geometry). "
-                            "If not provided, computed from alpha and density_contrast."
-                        ),
                     },
                 },
             },
@@ -851,23 +930,34 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
     physics_params = args.get("physics_params")
     physics_info = None
 
-    # Compute lambda_subdomain from alpha and density_contrast if not directly provided
-    if physics_params:
-        if physics_params.get("lambda_subdomain") is None:
-            alpha = physics_params.get("alpha")
-            density_contrast = physics_params.get("density_contrast")
-            if alpha is not None and density_contrast is not None:
-                import math
-                n = physics_params.get("n", 1)
-                # λ = √(α / n(n+1)) × ρ^(-(n+2)/(2(n+1)))
-                exponent = -(n + 2) / (2 * (n + 1))
-                lambda_subdomain = math.sqrt(alpha / (n * (n + 1))) * (density_contrast ** exponent)
-                physics_params = dict(physics_params)  # Make a copy to modify
-                physics_params["lambda_subdomain"] = lambda_subdomain
+    # Process physics_params to compute lambda values per region
+    lambda_per_region = {}
 
-    if physics_params and physics_params.get("lambda_subdomain"):
+    if physics_params:
+        # Option 1: Direct lambda dict provided
+        if physics_params.get("lambda"):
+            lambda_per_region = dict(physics_params["lambda"])
+
+        # Option 2: Compute from alpha + density + n
+        elif physics_params.get("alpha") is not None and physics_params.get("density"):
+            alpha = physics_params["alpha"]
+            n = physics_params.get("n", 1)
+            density_dict = physics_params["density"]
+
+            for region_name, density_spec in density_dict.items():
+                rho = _extract_density_value(density_spec)
+                if rho is not None and rho > 0:
+                    lambda_val = _compute_lambda(alpha, rho, n)
+                    lambda_per_region[region_name] = lambda_val
+
+    # Apply physics refinement if we have lambda values
+    if lambda_per_region:
+        # Find the minimum lambda (densest region = finest mesh needed)
+        min_lambda = min(lambda_per_region.values())
+        min_lambda_region = min(lambda_per_region, key=lambda k: lambda_per_region[k])
+
         # Determine subdomain size for physics refinement
-        # Only applies to geometries with internal subdomains (objects)
+        # Use characteristic size based on geometry
         subdomain_size = None
 
         if geometry == "sphere_in_vacuum":
@@ -877,41 +967,40 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
         elif geometry == "shell_in_vacuum":
             subdomain_size = params.get("outer_radius")
         elif geometry == "cylinder_in_vacuum":
-            # Use smaller of radius and height/2 for refinement
             subdomain_size = min(params.get("radius", 0), params.get("height", 0) / 2)
         elif geometry == "two_spheres":
-            # Use smaller sphere for finer refinement
             subdomain_size = min(params.get("radius_1", 0), params.get("radius_2", 0))
         elif geometry == "sphere_near_wall":
             subdomain_size = params.get("object_radius")
         elif geometry == "custom_2d":
-            # Estimate from points if available
             if "points" in params:
                 import numpy as np
                 pts = np.array(params["points"])
                 subdomain_size = float(np.max(pts) - np.min(pts)) / 2
-            elif "shape_file" in params:
-                # Can't easily estimate without reading file, skip
-                subdomain_size = None
             else:
                 subdomain_size = None
 
         if subdomain_size:
-            quality = estimate_physics_refinement(subdomain_size, physics_params, quality)
+            # Use minimum lambda for refinement (most conservative)
+            refined_params = {"lambda_subdomain": min_lambda}
+            quality = estimate_physics_refinement(subdomain_size, refined_params, quality)
+
             if quality.get("physics_refined"):
                 physics_info = {
-                    "lambda_subdomain": physics_params.get("lambda_subdomain"),
+                    "lambda_per_region": lambda_per_region,
+                    "lambda_min": min_lambda,
+                    "lambda_min_region": min_lambda_region,
                     "shell_thickness": quality.get("shell_thickness"),
                     "cell_min": quality["cell_min_factor"] * subdomain_size,
                     "subdomain_size": subdomain_size,
                     "refinement_applied": True,
                 }
-                # Include input params if lambda was computed
-                if args.get("physics_params", {}).get("alpha") is not None:
+                # Include input params if lambda was computed from alpha/density
+                if physics_params.get("alpha") is not None:
                     physics_info["computed_from"] = {
-                        "alpha": args["physics_params"]["alpha"],
-                        "density_contrast": args["physics_params"].get("density_contrast"),
-                        "n": args["physics_params"].get("n", 1),
+                        "alpha": physics_params["alpha"],
+                        "density": {k: _extract_density_value(v) for k, v in physics_params.get("density", {}).items()},
+                        "n": physics_params.get("n", 1),
                     }
 
     # Determine SELCIE symmetry parameter

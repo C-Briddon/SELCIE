@@ -30,7 +30,7 @@ Parameters:
 - tol: Convergence tolerance (default: 1e-14)
 - max_iter: Maximum iterations (default: 100)
 - relaxation: Relaxation factor for Picard (default: 1.0)
-- initial_guess: "constant" (default), "adiabatic", or "previous"
+- initial_guess: "constant" (default, recommended for SELCIE), "adiabatic", or "previous"
 """,
     inputSchema={
         "type": "object",
@@ -77,7 +77,7 @@ Parameters:
             "initial_guess": {
                 "type": "string",
                 "enum": ["constant", "adiabatic", "previous"],
-                "description": "Initial guess strategy. Default: constant",
+                "description": "Initial guess strategy. Default: constant (recommended for SELCIE)",
                 "default": "constant"
             },
             "custom_id": {
