@@ -20,7 +20,7 @@ Modes:
 - line: Sample along arbitrary line between two points
 - points: Evaluate at specific coordinates
 - grid: Sample on regular 2D grid
-- max_in_region: Find max/min values within a region (with optional min distance from source)
+- max_in_region: Find max/min values within a region, with optional minimum distance from other region(s). Use min_distance_from='all' to exclude points near any other domain boundary.
 
 Quantities:
 - field: Chameleon field φ
@@ -58,10 +58,16 @@ Quantities:
                     "z_range": {"type": "array", "description": "[z_min, z_max] (grid)"},
                     "n_r": {"type": "integer", "description": "Number of r points (grid)"},
                     "n_z": {"type": "integer", "description": "Number of z points (grid)"},
-                    "region": {"type": "string", "description": "Region to sample (max_in_region)"},
-                    "min_distance_from": {"type": "string", "description": "Region to keep distance from (max_in_region)"},
-                    "min_distance": {"type": "number", "description": "Minimum distance from boundary (max_in_region)"},
-                    "n_samples": {"type": "integer", "description": "Number of random samples (max_in_region)"}
+                    "region": {"type": "string", "description": "Region to sample (max_in_region). Default: vacuum"},
+                    "min_distance_from": {
+                        "oneOf": [
+                            {"type": "string"},
+                            {"type": "array", "items": {"type": "string"}}
+                        ],
+                        "description": "Region(s) to keep distance from (max_in_region). Can be: a region name, 'all' for all other regions, or a list of region names"
+                    },
+                    "min_distance": {"type": "number", "description": "Minimum distance from boundary of exclusion region(s) (max_in_region)"},
+                    "n_samples": {"type": "integer", "description": "Number of random samples (max_in_region). Default: 1000"}
                 }
             },
             "quantities": {
@@ -77,7 +83,7 @@ Quantities:
 
 def _generate_radial_points(params: dict, mesh_bounds: dict) -> np.ndarray:
     """Generate points along radial direction."""
-    n_points = params.get("n_points", 100)
+    n_points = params.get("n_points", 200)
     r_min = params.get("r_min", 0.01)
     r_max = params.get("r_max", mesh_bounds.get("r_max", 1.0))
     log_spacing = params.get("log_spacing", True)
@@ -102,7 +108,7 @@ def _generate_line_points(params: dict) -> np.ndarray:
     """Generate points along a line."""
     start = np.array(params["start"])
     end = np.array(params["end"])
-    n_points = params.get("n_points", 100)
+    n_points = params.get("n_points", 200)
 
     t = np.linspace(0, 1, n_points)
     points = start + np.outer(t, end - start)
@@ -167,8 +173,11 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
         with d.XDMFFile(mesh_file) as f:
             f.read(mesh)
 
+        # Get function space degree from solution info (default 2 for backwards compatibility)
+        deg_V = getattr(solution_info, 'deg_V', 2)
+
         # Create function space and load field
-        V = d.FunctionSpace(mesh, "CG", 1)
+        V = d.FunctionSpace(mesh, "CG", deg_V)
         field = d.Function(V)
 
         # Determine solution path (same root as mesh structure)
@@ -190,25 +199,12 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
         with d.HDF5File(mesh.mpi_comm(), field_file, "r") as f:
             f.read(field, "field")
 
-        # Load gradient magnitude if needed and available
-        grad_mag = None
+        # Compute gradient directly from field (more accurate than loading pre-computed)
+        field_grad = None
         if "gradient_magnitude" in quantities or "fifth_force_g" in quantities:
-            grad_mag_file = os.path.join(solution_path, "field_grad_mag.h5")
-            if os.path.exists(grad_mag_file):
-                # Try CG1 first (same as field), then DG0 if that fails
-                for space_type in ["CG1", "DG0"]:
-                    try:
-                        if space_type == "CG1":
-                            V_grad = V
-                        else:
-                            V_grad = d.FunctionSpace(mesh, "DG", 0)
-                        grad_mag = d.Function(V_grad)
-                        with d.HDF5File(mesh.mpi_comm(), grad_mag_file, "r") as f:
-                            f.read(grad_mag, "field_grad_mag")
-                        break  # Success
-                    except Exception:
-                        grad_mag = None
-                        continue
+            # Project grad(field) onto vector space with same degree
+            V_vec = d.VectorFunctionSpace(mesh, "CG", deg_V)
+            field_grad = d.project(d.grad(field), V_vec)
 
         # Get mesh bounds for radial mode
         coords = mesh.coordinates()
@@ -264,7 +260,7 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
             position_key = "grid"
         elif mode == "max_in_region":
             return await _handle_max_in_region(
-                arguments, mesh, field, grad_mag, mesh_info, solution_info, mesh_bounds
+                arguments, mesh, field, field_grad, mesh_info, solution_info, mesh_bounds
             )
         else:
             return [TextContent(type="text", text=json.dumps({
@@ -292,12 +288,13 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
         if "field" in quantities:
             data["field"] = field_values.tolist()
 
-        # Evaluate gradient magnitude
-        if ("gradient_magnitude" in quantities or "fifth_force_g" in quantities) and grad_mag is not None:
+        # Evaluate gradient magnitude (compute on-the-fly from gradient vector)
+        if ("gradient_magnitude" in quantities or "fifth_force_g" in quantities) and field_grad is not None:
             grad_values = np.zeros(n_points)
             for i, pt in enumerate(points):
                 try:
-                    grad_values[i] = grad_mag(pt[0], pt[1])
+                    grad_vec = field_grad(pt[0], pt[1])
+                    grad_values[i] = np.linalg.norm(grad_vec)
                 except RuntimeError:
                     grad_values[i] = np.nan
 
@@ -355,7 +352,7 @@ async def _handle_max_in_region(
     arguments: dict[str, Any],
     mesh,
     field,
-    grad_mag,
+    field_grad,
     mesh_info,
     solution_info,
     mesh_bounds: dict
@@ -393,17 +390,43 @@ async def _handle_max_in_region(
 
     target_marker = regions[region]
 
-    # Get source region marker for distance calculation
-    source_marker = None
+    # Determine which regions to keep distance from
+    # min_distance_from can be:
+    #   - None: no distance filtering
+    #   - "all": all regions except the target region
+    #   - a specific region name
+    #   - a list of region names
+    source_markers = []
+    exclude_regions_desc = None
+
     if min_distance_from:
-        if min_distance_from not in regions:
-            return [TextContent(type="text", text=json.dumps({
-                "error": {
-                    "code": "INVALID_REGION",
-                    "message": f"Region '{min_distance_from}' not found. Available: {list(regions.keys())}"
-                }
-            }, indent=2))]
-        source_marker = regions[min_distance_from]
+        if min_distance_from == "all":
+            # All regions except target
+            source_markers = [m for name, m in regions.items() if name != region]
+            exclude_regions_desc = f"all other regions ({', '.join(n for n in regions if n != region)})"
+        elif isinstance(min_distance_from, list):
+            # List of specific regions
+            for r in min_distance_from:
+                if r not in regions:
+                    return [TextContent(type="text", text=json.dumps({
+                        "error": {
+                            "code": "INVALID_REGION",
+                            "message": f"Region '{r}' not found. Available: {list(regions.keys())}"
+                        }
+                    }, indent=2))]
+                source_markers.append(regions[r])
+            exclude_regions_desc = ", ".join(min_distance_from)
+        else:
+            # Single region name
+            if min_distance_from not in regions:
+                return [TextContent(type="text", text=json.dumps({
+                    "error": {
+                        "code": "INVALID_REGION",
+                        "message": f"Region '{min_distance_from}' not found. Available: {list(regions.keys())}"
+                    }
+                }, indent=2))]
+            source_markers = [regions[min_distance_from]]
+            exclude_regions_desc = min_distance_from
 
     # Collect cell centers in target region
     target_cells = []
@@ -423,12 +446,12 @@ async def _handle_max_in_region(
             }
         }, indent=2))]
 
-    # If min_distance_from is specified, compute distances
-    if source_marker is not None and min_distance > 0:
-        # Collect unique vertex indices from source region cells
+    # If distance filtering is requested, compute distances from exclusion regions
+    if len(source_markers) > 0 and min_distance > 0:
+        # Collect unique vertex indices from all source region cells
         source_vertex_indices = set()
         for cell in d.cells(mesh):
-            if subdomains[cell] == source_marker:
+            if subdomains[cell] in source_markers:
                 for vertex in d.vertices(cell):
                     source_vertex_indices.add(vertex.index())
 
@@ -436,7 +459,7 @@ async def _handle_max_in_region(
             return [TextContent(type="text", text=json.dumps({
                 "error": {
                     "code": "EMPTY_REGION",
-                    "message": f"No cells found in region '{min_distance_from}'"
+                    "message": f"No cells found in exclusion regions: {exclude_regions_desc}"
                 }
             }, indent=2))]
 
@@ -444,7 +467,7 @@ async def _handle_max_in_region(
         coords = mesh.coordinates()
         source_boundary_points = coords[list(source_vertex_indices), :2]
 
-        # Filter target points by distance from source boundary
+        # Filter target points by distance from source boundaries
         valid_mask = np.ones(len(target_centers), dtype=bool)
         for i, pt in enumerate(target_centers):
             distances = np.linalg.norm(source_boundary_points - pt, axis=1)
@@ -457,7 +480,7 @@ async def _handle_max_in_region(
             return [TextContent(type="text", text=json.dumps({
                 "error": {
                     "code": "NO_VALID_POINTS",
-                    "message": f"No points in '{region}' are >= {min_distance} from '{min_distance_from}'"
+                    "message": f"No points in '{region}' are >= {min_distance} from {exclude_regions_desc}"
                 }
             }, indent=2))]
 
@@ -487,9 +510,9 @@ async def _handle_max_in_region(
             "mean": float(np.mean(field_values))
         }
 
-    # Gradient magnitude
-    if ("gradient_magnitude" in quantities or "fifth_force_g" in quantities) and grad_mag is not None:
-        grad_values = np.array([grad_mag(pt[0], pt[1]) for pt in sample_points])
+    # Gradient magnitude (compute on-the-fly from gradient vector)
+    if ("gradient_magnitude" in quantities or "fifth_force_g" in quantities) and field_grad is not None:
+        grad_values = np.array([np.linalg.norm(field_grad(pt[0], pt[1])) for pt in sample_points])
 
         if "gradient_magnitude" in quantities:
             max_idx = np.argmax(grad_values)

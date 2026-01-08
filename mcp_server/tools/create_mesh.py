@@ -112,7 +112,10 @@ TOOL_DEFINITION = Tool(
         "Uses geometry templates that automatically handle subdomain creation, "
         "symmetry, and mesh refinement. Templates include object-in-vacuum "
         "(sphere_in_vacuum, ellipse_in_vacuum, etc.), plain domains (box_2d, disk, etc.), "
-        "and custom shapes from file."
+        "and custom shapes from file.\n\n"
+        "IMPORTANT: For thin-shell problems (high α, high density contrast), provide "
+        "physics_params with alpha and density_contrast to enable automatic mesh refinement "
+        "near object boundaries. This ensures the thin shell region is properly resolved."
     ),
     inputSchema={
         "type": "object",
@@ -170,18 +173,36 @@ TOOL_DEFINITION = Tool(
             "physics_params": {
                 "type": "object",
                 "description": (
-                    "Optional physics parameters for adaptive mesh refinement. "
-                    "Provide lambda_subdomain (Compton wavelength in subdomain) to automatically "
-                    "refine mesh near subdomain boundaries to resolve thin shell. "
-                    "Values should be in same length units as geometry params."
+                    "Physics parameters for automatic thin-shell mesh refinement. "
+                    "RECOMMENDED: Provide alpha and density_contrast - the tool will compute "
+                    "the Compton wavelength and refine the mesh appropriately. "
+                    "Alternatively, provide lambda_subdomain directly if known."
                 ),
                 "properties": {
+                    "alpha": {
+                        "type": "number",
+                        "description": (
+                            "Dimensionless coupling constant α. When provided with density_contrast, "
+                            "automatically computes lambda_subdomain = √(α/n(n+1)) × ρ^(-(n+2)/(2(n+1)))"
+                        ),
+                    },
+                    "density_contrast": {
+                        "type": "number",
+                        "description": (
+                            "Density ratio ρ_object/ρ_vacuum (dimensionless). "
+                            "Used with alpha to compute Compton wavelength for mesh refinement."
+                        ),
+                    },
+                    "n": {
+                        "type": "integer",
+                        "description": "Potential power index (default: 1)",
+                        "default": 1,
+                    },
                     "lambda_subdomain": {
                         "type": "number",
                         "description": (
                             "Compton wavelength in subdomain (same units as geometry). "
-                            "Mesh will be refined near subdomain boundaries to resolve "
-                            "thin shell of thickness ~lambda_subdomain."
+                            "If not provided, computed from alpha and density_contrast."
                         ),
                     },
                 },
@@ -224,10 +245,11 @@ def _create_sphere_in_vacuum(
     # Create background (vacuum)
     bg_cell_min = quality["cell_min_factor"] * vacuum_radius
     bg_cell_max = quality["cell_max_factor"] * vacuum_radius
+    bg_dist_max = quality["dist_max_factor"] * vacuum_radius
     MT.create_background_mesh(
         CellSizeMin=bg_cell_min,
         CellSizeMax=bg_cell_max,
-        DistMax=dist_max,
+        DistMax=bg_dist_max,
         background_radius=vacuum_radius,
         wall_thickness=wall_thickness,  # None if not specified
     )
@@ -828,6 +850,21 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
     # Apply physics-aware refinement if physics_params provided
     physics_params = args.get("physics_params")
     physics_info = None
+
+    # Compute lambda_subdomain from alpha and density_contrast if not directly provided
+    if physics_params:
+        if physics_params.get("lambda_subdomain") is None:
+            alpha = physics_params.get("alpha")
+            density_contrast = physics_params.get("density_contrast")
+            if alpha is not None and density_contrast is not None:
+                import math
+                n = physics_params.get("n", 1)
+                # λ = √(α / n(n+1)) × ρ^(-(n+2)/(2(n+1)))
+                exponent = -(n + 2) / (2 * (n + 1))
+                lambda_subdomain = math.sqrt(alpha / (n * (n + 1))) * (density_contrast ** exponent)
+                physics_params = dict(physics_params)  # Make a copy to modify
+                physics_params["lambda_subdomain"] = lambda_subdomain
+
     if physics_params and physics_params.get("lambda_subdomain"):
         # Determine subdomain size for physics refinement
         # Only applies to geometries with internal subdomains (objects)
@@ -863,11 +900,19 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
             quality = estimate_physics_refinement(subdomain_size, physics_params, quality)
             if quality.get("physics_refined"):
                 physics_info = {
+                    "lambda_subdomain": physics_params.get("lambda_subdomain"),
                     "shell_thickness": quality.get("shell_thickness"),
                     "cell_min": quality["cell_min_factor"] * subdomain_size,
                     "subdomain_size": subdomain_size,
                     "refinement_applied": True,
                 }
+                # Include input params if lambda was computed
+                if args.get("physics_params", {}).get("alpha") is not None:
+                    physics_info["computed_from"] = {
+                        "alpha": args["physics_params"]["alpha"],
+                        "density_contrast": args["physics_params"].get("density_contrast"),
+                        "n": args["physics_params"].get("n", 1),
+                    }
 
     # Determine SELCIE symmetry parameter
     selcie_symmetry = "vertical" if symmetry == "axial" else None

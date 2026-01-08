@@ -190,6 +190,7 @@ def main():
 
     # Create source shape from points
     source_surface = MT.points_to_surface(points)
+    print(f"Source mesh settings: CellSizeMin={cell_min}, CellSizeMax={cell_max}, DistMax={dist_max}")
     MT.create_subdomain(CellSizeMin=cell_min, CellSizeMax=cell_max, DistMax=dist_max)
 
     # Create measuring boundary at distance d from source
@@ -209,8 +210,10 @@ def main():
             holes=source_surface,
             symmetry="vertical"
         )
+    print(f"Measuring boundary mesh settings: CellSizeMin={cell_min}, CellSizeMax={cell_max}, DistMax={dist_max}")
     MT.create_subdomain(CellSizeMin=cell_min, CellSizeMax=cell_max, DistMax=dist_max)
 
+    print(f"Background mesh settings: CellSizeMin={bg_cell_min}, CellSizeMax={bg_cell_max}, DistMax={bg_dist_max}")
     # Create background vacuum chamber with wall
     MT.create_background_mesh(
         CellSizeMin=bg_cell_min,

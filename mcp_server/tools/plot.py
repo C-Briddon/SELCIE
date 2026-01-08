@@ -95,8 +95,11 @@ def _load_solution_data(solution_id: str, session, need_grad: bool = False):
     with d.XDMFFile(mesh_file) as f:
         f.read(mesh)
 
+    # Get function space degree from solution info (default 2 for backwards compatibility)
+    deg_V = getattr(solution_info, 'deg_V', 2)
+
     # Create function space and load field
-    V = d.FunctionSpace(mesh, "CG", 1)
+    V = d.FunctionSpace(mesh, "CG", deg_V)
     field = d.Function(V)
 
     # Get solution path
@@ -111,36 +114,30 @@ def _load_solution_data(solution_id: str, session, need_grad: bool = False):
     with d.HDF5File(mesh.mpi_comm(), field_file, "r") as f:
         f.read(field, "field")
 
-    # Load gradient if needed
-    grad_mag = None
+    # Load gradient vector if needed
+    field_grad = None
     if need_grad:
-        grad_file = os.path.join(solution_path, "field_grad_mag.h5")
+        grad_file = os.path.join(solution_path, "field_grad.h5")
         if os.path.exists(grad_file):
-            # Try CG1 first (same as field), then DG0 if that fails
-            for space_type in ["CG1", "DG0"]:
-                try:
-                    if space_type == "CG1":
-                        V_grad = V
-                    else:
-                        V_grad = d.FunctionSpace(mesh, "DG", 0)
-                    grad_mag = d.Function(V_grad)
-                    with d.HDF5File(mesh.mpi_comm(), grad_file, "r") as f:
-                        f.read(grad_mag, "field_grad_mag")
-                    break  # Success
-                except Exception:
-                    grad_mag = None
-                    continue
+            # field_grad is a vector function - use same degree as scalar field
+            V_vec = d.VectorFunctionSpace(mesh, "CG", deg_V)
+            field_grad = d.Function(V_vec)
+            try:
+                with d.HDF5File(mesh.mpi_comm(), grad_file, "r") as f:
+                    f.read(field_grad, "field_grad")
+            except Exception:
+                field_grad = None
 
     return {
         "mesh": mesh,
         "field": field,
-        "grad_mag": grad_mag,
+        "field_grad": field_grad,
         "solution_info": solution_info,
         "mesh_info": mesh_info,
     }, None
 
 
-def _evaluate_radial(field, mesh, n_points=100, r_min=None, r_max=None, log_spacing=False):
+def _evaluate_radial(field, mesh, n_points=200, r_min=None, r_max=None, log_spacing=False):
     """Evaluate field along radial direction."""
     coords = mesh.coordinates()
     if r_min is None:
@@ -193,9 +190,36 @@ def _plot_field_1d(data, options, ax):
     ax.legend()
 
 
+def _evaluate_radial_gradient(field_grad, mesh, n_points=200, r_min=None, r_max=None, log_spacing=False):
+    """Evaluate gradient magnitude along radial direction using field_grad vector and np.linalg.norm."""
+    coords = mesh.coordinates()
+    if r_min is None:
+        r_min = 0.01
+    if r_max is None:
+        r_max = float(coords[:, 0].max()) * 0.95
+
+    if log_spacing and r_min > 0:
+        r_values = np.logspace(np.log10(r_min), np.log10(r_max), n_points)
+    else:
+        r_values = np.linspace(r_min, r_max, n_points)
+
+    grad_mag_values = []
+    valid_r = []
+    for r in r_values:
+        try:
+            grad_vec = field_grad(r, 0.0)
+            grad_mag = np.linalg.norm(grad_vec)
+            grad_mag_values.append(grad_mag)
+            valid_r.append(r)
+        except RuntimeError:
+            pass  # Point outside mesh
+
+    return np.array(valid_r), np.array(grad_mag_values)
+
+
 def _plot_force_1d(data, options, ax):
     """Create 1D force (gradient magnitude) plot."""
-    if data["grad_mag"] is None:
+    if data["field_grad"] is None:
         ax.text(0.5, 0.5, "Gradient not computed for this solution",
                 ha='center', va='center', transform=ax.transAxes)
         return
@@ -206,8 +230,9 @@ def _plot_force_1d(data, options, ax):
     log_r = options.get("log_r", False)
     log_scale = options.get("log_scale", True)
 
-    r, grad = _evaluate_radial(
-        data["grad_mag"], data["mesh"],
+    # Evaluate gradient vector and compute magnitude with np.linalg.norm (like Sphere_Standalone.py)
+    r, grad = _evaluate_radial_gradient(
+        data["field_grad"], data["mesh"],
         n_points=n_points, r_min=r_min, r_max=r_max, log_spacing=log_r
     )
 
@@ -265,13 +290,13 @@ def _plot_force_2d(data, options, ax):
     """Create 2D gradient magnitude colormap."""
     import matplotlib.tri as mtri
 
-    if data["grad_mag"] is None:
+    if data["field_grad"] is None:
         ax.text(0.5, 0.5, "Gradient not computed for this solution",
                 ha='center', va='center', transform=ax.transAxes)
         return
 
     mesh = data["mesh"]
-    grad_mag = data["grad_mag"]
+    field_grad = data["field_grad"]
     colormap = options.get("colormap", "hot")
     log_scale = options.get("log_scale", True)
 
@@ -279,11 +304,17 @@ def _plot_force_2d(data, options, ax):
     x = coords[:, 0]
     y = coords[:, 1]
 
-    # Get gradient values at vertices
-    grad_vals = grad_mag.compute_vertex_values(mesh)
+    # Compute gradient magnitude at each vertex using np.linalg.norm (like Sphere_Standalone.py)
+    grad_vals = np.zeros(len(coords))
+    for i, (xi, yi) in enumerate(coords):
+        try:
+            grad_vec = field_grad(xi, yi)
+            grad_vals[i] = np.linalg.norm(grad_vec)
+        except RuntimeError:
+            grad_vals[i] = np.nan
 
-    if log_scale and np.all(grad_vals > 0):
-        grad_vals = np.log10(grad_vals)
+    if log_scale and np.all(grad_vals[~np.isnan(grad_vals)] > 0):
+        grad_vals = np.log10(np.where(grad_vals > 0, grad_vals, np.nan))
         cbar_label = 'log₁₀(|∇φ|)'
     else:
         cbar_label = '|∇φ|'
@@ -316,15 +347,14 @@ def _plot_comparison(solutions_data, options, ax):
         color = colors[i % len(colors)]
 
         if quantity == "field":
-            func = data["field"]
+            r, vals = _evaluate_radial(data["field"], data["mesh"], n_points=n_points, log_spacing=log_r)
             ylabel = 'φ'
         else:
-            func = data["grad_mag"]
-            ylabel = '|∇φ|'
-            if func is None:
+            # Gradient magnitude using field_grad and np.linalg.norm
+            if data["field_grad"] is None:
                 continue
-
-        r, vals = _evaluate_radial(func, data["mesh"], n_points=n_points, log_spacing=log_r)
+            r, vals = _evaluate_radial_gradient(data["field_grad"], data["mesh"], n_points=n_points, log_spacing=log_r)
+            ylabel = '|∇φ|'
 
         if legend_by == "alpha":
             label = f"α={data['solution_info'].alpha}"

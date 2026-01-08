@@ -83,6 +83,11 @@ Parameters:
             "custom_id": {
                 "type": "string",
                 "description": "Custom solution ID. Default: auto-generated"
+            },
+            "deg_V": {
+                "type": "integer",
+                "description": "Function space degree (1=CG1, 2=CG2). Default: 2",
+                "default": 2
             }
         },
         "required": ["mesh_id", "alpha", "density"]
@@ -279,6 +284,7 @@ async def handle(arguments: dict) -> list[TextContent]:
     relaxation = arguments.get("relaxation", 1.0)
     initial_guess = arguments.get("initial_guess", "constant")
     custom_id = arguments.get("custom_id")
+    deg_V = arguments.get("deg_V", 2)
 
     # Validate mesh exists
     mesh_info = session.get_mesh(mesh_id)
@@ -398,7 +404,8 @@ async def handle(arguments: dict) -> list[TextContent]:
             alpha=alpha,
             n=n,
             density_profile=density_profile,
-            initial_field_profiles=initial_field_profiles
+            initial_field_profiles=initial_field_profiles,
+            deg_V=deg_V
         )
 
         # Run solver (picard iteration with optimized linear solver)
@@ -501,7 +508,8 @@ async def handle(arguments: dict) -> list[TextContent]:
             iterations=iterations,
             final_residual=final_du_norm,
             field_min=field_min,
-            field_max=field_max
+            field_max=field_max,
+            deg_V=deg_V
         )
         session.add_solution(solution_info)
 

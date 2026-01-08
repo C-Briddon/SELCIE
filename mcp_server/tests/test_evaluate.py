@@ -318,6 +318,30 @@ class TestEvaluate:
         assert data["error"]["code"] == "INVALID_REGION"
 
     @pytest.mark.asyncio
+    async def test_max_in_region_distance_from_all(self, solution_id):
+        """Test max_in_region with min_distance_from='all' to exclude all other regions."""
+        from tools.evaluate import handle
+
+        result = await handle({
+            "solution_id": solution_id,
+            "mode": "max_in_region",
+            "params": {
+                "region": "vacuum",
+                "min_distance_from": "all",  # Keep distance from all other regions
+                "min_distance": 0.05,
+                "n_samples": 100,
+            },
+            "quantities": ["field"],
+        })
+
+        data = json.loads(result[0].text)
+
+        assert "error" not in data
+        assert data["min_distance_from"] == "all"
+        assert data["min_distance"] == 0.05
+        assert data["n_valid_samples"] > 0
+
+    @pytest.mark.asyncio
     async def test_solution_not_found(self):
         """Test error when solution doesn't exist."""
         from tools.evaluate import handle

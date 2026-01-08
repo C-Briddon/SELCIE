@@ -34,6 +34,7 @@ class SolutionInfo:
     final_residual: float
     field_min: float
     field_max: float
+    deg_V: int = 2  # Function space degree (CG1=1, CG2=2, etc.)
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 

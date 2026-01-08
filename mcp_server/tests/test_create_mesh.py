@@ -265,6 +265,85 @@ class TestCreateMeshPhysicsRefinement:
         # Should not explode - capped at reasonable cell count
         assert data["n_cells"] < 50000
 
+    @pytest.mark.asyncio
+    async def test_lambda_computed_from_alpha_density(self):
+        """Lambda should be auto-computed from alpha and density_contrast."""
+        from tools.create_mesh import handle
+        import math
+
+        alpha = 1e18
+        density_contrast = 1e17
+        n = 1
+
+        result = await handle({
+            "geometry": "sphere_in_vacuum",
+            "params": {"object_radius": 0.1, "vacuum_radius": 1.0},
+            "mesh_quality": "coarse",
+            "physics_params": {
+                "alpha": alpha,
+                "density_contrast": density_contrast,
+                "n": n,
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" not in data
+        assert "physics_refinement" in data
+        assert data["physics_refinement"]["refinement_applied"] is True
+
+        # Verify lambda was computed correctly
+        # λ = √(α / n(n+1)) × ρ^(-(n+2)/(2(n+1)))
+        expected_lambda = math.sqrt(alpha / (n * (n + 1))) * (density_contrast ** (-(n + 2) / (2 * (n + 1))))
+        actual_lambda = data["physics_refinement"]["lambda_subdomain"]
+        assert abs(actual_lambda - expected_lambda) / expected_lambda < 0.01  # Within 1%
+
+        # Verify computed_from is included
+        assert "computed_from" in data["physics_refinement"]
+        assert data["physics_refinement"]["computed_from"]["alpha"] == alpha
+        assert data["physics_refinement"]["computed_from"]["density_contrast"] == density_contrast
+
+    @pytest.mark.asyncio
+    async def test_lambda_direct_overrides_computed(self):
+        """Direct lambda_subdomain should be used if provided."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "sphere_in_vacuum",
+            "params": {"object_radius": 0.1, "vacuum_radius": 1.0},
+            "mesh_quality": "coarse",
+            "physics_params": {
+                "alpha": 1e18,
+                "density_contrast": 1e17,
+                "lambda_subdomain": 0.05,  # Explicit value
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" not in data
+        assert "physics_refinement" in data
+        # Should use the explicit value, not compute from alpha/density
+        assert data["physics_refinement"]["lambda_subdomain"] == 0.05
+
+    @pytest.mark.asyncio
+    async def test_alpha_without_density_no_refinement(self):
+        """Alpha alone without density_contrast should not compute lambda."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "sphere_in_vacuum",
+            "params": {"object_radius": 0.1, "vacuum_radius": 1.0},
+            "mesh_quality": "coarse",
+            "physics_params": {
+                "alpha": 1e18,
+                # No density_contrast
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" not in data
+        # No physics refinement should be applied
+        assert "physics_refinement" not in data
+
 
 class TestCreateMeshCustom2D:
     """Test custom_2d geometry."""

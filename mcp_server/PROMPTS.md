@@ -140,6 +140,10 @@
 
 > Find the max fifth force in vacuum at least 0.1 away from the object surface
 
+> Find the max fifth force in vacuum at least 0.05 away from ALL other domains (object and wall)
+
+> Find the max gradient in vacuum, keeping at least 0.1 distance from both the object and wall regions
+
 ## plot
 
 ### 1D profiles
@@ -188,7 +192,8 @@
 > 4. Plot the radial field profile φ(r)
 > 5. Plot the 2D field distribution
 > 6. Plot the gradient magnitude |∇φ|(r) which is related to the fifth force
-> 7. Evaluate the maximum gradient in the vacuum region at least 0.05 away from the sphere surface
+> 7. Find the max fifth gradient in vacuum at least 0.05 away from ALL other domains (object and wall)
+> 8. Save the plots in this directory
 
 ### Parameter comparison
 
