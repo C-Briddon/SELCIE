@@ -16,6 +16,20 @@ from .solve import (
     TOOL_DEFINITION as SOLVE_TOOL,
     handle as handle_solve,
 )
+from .evaluate import (
+    TOOL_DEFINITION as EVALUATE_TOOL,
+    handle as handle_evaluate,
+)
+from .plot import (
+    TOOL_DEFINITION as PLOT_TOOL,
+    handle as handle_plot,
+)
+from .state import (
+    GET_STATE_TOOL,
+    handle_get_state,
+    CLEAR_TOOL,
+    handle_clear,
+)
 
 __all__ = [
     "CALCULATE_PHYSICAL_PARAMETERS_TOOL",
@@ -26,4 +40,12 @@ __all__ = [
     "handle_plot_mesh",
     "SOLVE_TOOL",
     "handle_solve",
+    "EVALUATE_TOOL",
+    "handle_evaluate",
+    "PLOT_TOOL",
+    "handle_plot",
+    "GET_STATE_TOOL",
+    "handle_get_state",
+    "CLEAR_TOOL",
+    "handle_clear",
 ]

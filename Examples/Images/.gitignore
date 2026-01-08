@@ -1,4 +1,5 @@
 *.png
 *.dat
+*.csv
 !chameleon_field_of_a_chameleon.png
 !chameleon_gradient_magnitude_of_a_chameleon.png

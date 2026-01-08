@@ -62,8 +62,10 @@ is needed or if analytic solutions suffice.
 
 SELCIE solves the dimensionless chameleon field equation:
 ```
-α ∇²φ + φ^{-(n+1)} = ρ
+α ∇²φ + φ^{-(n+1)} = ρ̂
 ```
+
+where ρ̂ = ρ/ρ₀ is the dimensionless density (ρ₀ is the reference density used to compute α).
 
 The dimensionless α parameter encapsulates all physical parameters:
 ```
@@ -555,10 +557,10 @@ Solve the chameleon field equation on a mesh with specified density profile.
 |------|------|----------|-------------|
 | `mesh_id` | string | Yes | Mesh ID |
 | `alpha` | number | Yes | Dimensionless α parameter |
-| `density` | object | Yes | Density profile specification (see below) |
+| `density` | object | Yes | Dimensionless density profile ρ̂ = ρ/ρ₀ (see below) |
 | `n` | integer | No | Potential power. Default: 1 |
 | `method` | string | No | `"picard"`, `"auto"`. Default: `"auto"` |
-| `tol` | number | No | Convergence tolerance. Default: 1e-8 |
+| `tol` | number | No | Convergence tolerance. Default: 1e-14 |
 | `max_iter` | integer | No | Maximum iterations. Default: 100 |
 | `relaxation` | number | No | Relaxation factor (0-1]. Default: 1.0 |
 | `initial_guess` | string | No | `"constant"`, `"adiabatic"`, `"previous"`. Default: `"constant"` (uses lowest density across subdomains) |
@@ -566,11 +568,17 @@ Solve the chameleon field equation on a mesh with specified density profile.
 
 #### Density Specification
 
-The `density` parameter is a dictionary mapping region names to density values. Each region can specify density as:
+The `density` parameter is a dictionary mapping region names to **dimensionless** density values ρ̂ = ρ/ρ₀, where ρ₀ is the same reference density used to compute α via `calculate_physical_parameters`.
 
-- **Number**: Constant density value
-- **Object with `expression`**: Custom formula
-- **Object with `file`**: Tabulated data from file
+For example, if ρ₀ = 10⁻¹⁰ g/cm³ (vacuum density) was used to compute α, then:
+- Aluminum (2.7 g/cm³) → ρ̂ = 2.7 × 10¹⁰
+- Vacuum (10⁻¹⁰ g/cm³) → ρ̂ = 1.0
+
+Each region can specify density as:
+
+- **Number**: Constant dimensionless density value
+- **Object with `expression`**: Custom formula (in dimensionless units)
+- **Object with `file`**: Tabulated data from file (in dimensionless units)
 
 ##### Constant density
 ```json
@@ -1123,9 +1131,6 @@ solution = solve(
         "vacuum": 1.0
     }
 )
-
-# Analyze
-analysis = analyze(solution_id=solution["solution_id"])
 
 # Plot
 plot(solution_id=solution["solution_id"], plot_type="field_1d")

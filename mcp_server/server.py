@@ -25,6 +25,14 @@ from tools import (
     handle_plot_mesh,
     SOLVE_TOOL,
     handle_solve,
+    EVALUATE_TOOL,
+    handle_evaluate,
+    PLOT_TOOL,
+    handle_plot,
+    GET_STATE_TOOL,
+    handle_get_state,
+    CLEAR_TOOL,
+    handle_clear,
 )
 
 
@@ -38,6 +46,10 @@ TOOL_HANDLERS = {
     "create_mesh": handle_create_mesh,
     "plot_mesh": handle_plot_mesh,
     "solve": handle_solve,
+    "evaluate": handle_evaluate,
+    "plot": handle_plot,
+    "get_state": handle_get_state,
+    "clear": handle_clear,
 }
 
 
@@ -49,6 +61,10 @@ async def list_tools() -> list[Tool]:
         CREATE_MESH_TOOL,
         PLOT_MESH_TOOL,
         SOLVE_TOOL,
+        EVALUATE_TOOL,
+        PLOT_TOOL,
+        GET_STATE_TOOL,
+        CLEAR_TOOL,
     ]
 
 

@@ -103,3 +103,95 @@
 > Create a coarse sphere mesh and plot it. If it looks too coarse, create a medium quality one.
 
 > The thin shell isn't visible in my mesh - recreate it with lambda_subdomain=0.005 and show me the refinement
+
+## solve
+
+### Basic solving
+
+> Solve for the chameleon field on mesh_001 with α=3.5 and densities: object=2.7e10, vacuum=1.0
+
+> Solve with α=1.0 using the adiabatic initial guess
+
+> Run a solve with relaxation=0.5 and max_iter=200 for a stiff problem with α=1000
+
+### Expression-based density
+
+> Solve with a radially varying density profile: object density = 1e6/(1 + (r/0.1)^2), vacuum = 1.0
+
+## evaluate
+
+### Radial profiles
+
+> Evaluate the field along the radial direction with 200 points using log spacing
+
+> Get the field and gradient magnitude from r=0.01 to r=0.9
+
+### Specific points
+
+> Evaluate the field at points (0.2, 0), (0.5, 0), and (0.8, 0)
+
+### Grid evaluation
+
+> Evaluate the field on a 50x50 grid from r=0 to 1 and z=-0.5 to 0.5
+
+### Maximum force finding
+
+> Find the maximum gradient magnitude in the vacuum region
+
+> Find the max fifth force in vacuum at least 0.1 away from the object surface
+
+## plot
+
+### 1D profiles
+
+> Plot the radial field profile φ(r) for solution_001
+
+> Plot the gradient magnitude |∇φ|(r) with log scale
+
+> Plot field_1d with log r-axis and 300 points
+
+### 2D visualizations
+
+> Plot the 2D field distribution with the plasma colormap
+
+> Create a 2D plot of the gradient magnitude
+
+### Comparison plots
+
+> Compare solutions solution_001, solution_002, solution_003 on the same plot
+
+## get_state and clear
+
+> Show me what meshes and solutions are in the current session
+
+> Clear all the solutions but keep the meshes
+
+> Clear everything and start fresh
+
+## Full workflow tests
+
+### Sphere in Vacuum (Complete Test)
+
+> I want to simulate a chameleon field around a sphere in a vacuum chamber.
+>
+> Setup:
+> - Sphere with radius 0.1337 (corresponds to volume 0.01)
+> - Vacuum chamber radius 1.0, wall thickness 0.05
+> - Use α = 1e18 and n = 1
+> - Source density: 1e17
+> - Vacuum density: 1.0
+>
+> Please:
+> 1. Create a mesh for this geometry (sphere_in_vacuum with object_radius=0.1337)
+> 2. Plot the mesh to show the geometry
+> 3. Solve for the chameleon field
+> 4. Plot the radial field profile φ(r)
+> 5. Plot the 2D field distribution
+> 6. Plot the gradient magnitude |∇φ|(r) which is related to the fifth force
+> 7. Evaluate the maximum gradient in the vacuum region at least 0.05 away from the sphere surface
+
+### Parameter comparison
+
+> Create a sphere_in_vacuum mesh and solve for the chameleon field with three different α values: 0.5, 3.5, and 10.0. Use object density 2.7e10 and vacuum density 1.0 for all cases.
+>
+> Then create a comparison plot showing all three field profiles on the same graph.

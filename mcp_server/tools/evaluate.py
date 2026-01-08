@@ -1,0 +1,528 @@
+#!/usr/bin/env python3
+"""Evaluate tool for SELCIE MCP server."""
+
+import json
+import os
+from typing import Any
+
+import numpy as np
+from mcp.types import TextContent, Tool
+
+from utils.session import get_session
+
+
+TOOL_DEFINITION = Tool(
+    name="evaluate",
+    description="""Evaluate field values and derived quantities at specified locations.
+
+Modes:
+- radial: Sample along radial direction from origin
+- line: Sample along arbitrary line between two points
+- points: Evaluate at specific coordinates
+- grid: Sample on regular 2D grid
+- max_in_region: Find max/min values within a region (with optional min distance from source)
+
+Quantities:
+- field: Chameleon field φ
+- gradient_magnitude: |∇φ|
+- fifth_force_g: Fifth force in units of g (requires beta parameter)
+- density: ρ̂ at evaluation points (if available)
+- adiabatic_field: ρ̂^{-1/(n+1)} for comparison
+- field_deviation: (φ - φ_adiabatic) / φ_adiabatic
+""",
+    inputSchema={
+        "type": "object",
+        "properties": {
+            "solution_id": {
+                "type": "string",
+                "description": "ID of the solution to evaluate"
+            },
+            "mode": {
+                "type": "string",
+                "enum": ["radial", "line", "points", "grid", "max_in_region"],
+                "description": "Evaluation mode"
+            },
+            "params": {
+                "type": "object",
+                "description": "Mode-specific parameters",
+                "properties": {
+                    "n_points": {"type": "integer", "description": "Number of sample points (radial, line)"},
+                    "r_min": {"type": "number", "description": "Minimum radius (radial)"},
+                    "r_max": {"type": "number", "description": "Maximum radius (radial)"},
+                    "log_spacing": {"type": "boolean", "description": "Use log spacing (radial)"},
+                    "direction": {"type": "array", "description": "Direction vector [r, z] (radial)"},
+                    "start": {"type": "array", "description": "Start point (line)"},
+                    "end": {"type": "array", "description": "End point (line)"},
+                    "coordinates": {"type": "array", "description": "List of [r, z] points (points)"},
+                    "r_range": {"type": "array", "description": "[r_min, r_max] (grid)"},
+                    "z_range": {"type": "array", "description": "[z_min, z_max] (grid)"},
+                    "n_r": {"type": "integer", "description": "Number of r points (grid)"},
+                    "n_z": {"type": "integer", "description": "Number of z points (grid)"},
+                    "region": {"type": "string", "description": "Region to sample (max_in_region)"},
+                    "min_distance_from": {"type": "string", "description": "Region to keep distance from (max_in_region)"},
+                    "min_distance": {"type": "number", "description": "Minimum distance from boundary (max_in_region)"},
+                    "n_samples": {"type": "integer", "description": "Number of random samples (max_in_region)"}
+                }
+            },
+            "quantities": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Quantities to compute. Default: ['field', 'gradient_magnitude']"
+            }
+        },
+        "required": ["solution_id", "mode"]
+    }
+)
+
+
+def _generate_radial_points(params: dict, mesh_bounds: dict) -> np.ndarray:
+    """Generate points along radial direction."""
+    n_points = params.get("n_points", 100)
+    r_min = params.get("r_min", 0.01)
+    r_max = params.get("r_max", mesh_bounds.get("r_max", 1.0))
+    log_spacing = params.get("log_spacing", True)
+    direction = params.get("direction", [1, 0])
+
+    # Normalize direction
+    direction = np.array(direction, dtype=float)
+    direction = direction / np.linalg.norm(direction)
+
+    # Generate radii
+    if log_spacing and r_min > 0:
+        radii = np.logspace(np.log10(r_min), np.log10(r_max), n_points)
+    else:
+        radii = np.linspace(r_min, r_max, n_points)
+
+    # Generate points along direction
+    points = np.outer(radii, direction)
+    return points, radii
+
+
+def _generate_line_points(params: dict) -> np.ndarray:
+    """Generate points along a line."""
+    start = np.array(params["start"])
+    end = np.array(params["end"])
+    n_points = params.get("n_points", 100)
+
+    t = np.linspace(0, 1, n_points)
+    points = start + np.outer(t, end - start)
+    distances = np.linalg.norm(points - start, axis=1)
+    return points, distances
+
+
+def _generate_grid_points(params: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Generate points on a regular grid."""
+    r_range = params["r_range"]
+    z_range = params["z_range"]
+    n_r = params.get("n_r", 50)
+    n_z = params.get("n_z", 50)
+
+    r = np.linspace(r_range[0], r_range[1], n_r)
+    z = np.linspace(z_range[0], z_range[1], n_z)
+    R, Z = np.meshgrid(r, z)
+
+    points = np.column_stack([R.ravel(), Z.ravel()])
+    return points, r, z
+
+
+async def handle(arguments: dict[str, Any]) -> list[TextContent]:
+    """Handle evaluate tool calls."""
+    try:
+        # Import FEniCS here to avoid import issues
+        import dolfin as d
+
+        solution_id = arguments["solution_id"]
+        mode = arguments["mode"]
+        params = arguments.get("params", {})
+        quantities = arguments.get("quantities", ["field", "gradient_magnitude"])
+
+        # Get session and solution info
+        session = get_session()
+        solution_info = session.get_solution(solution_id)
+
+        if solution_info is None:
+            return [TextContent(type="text", text=json.dumps({
+                "error": {
+                    "code": "SOLUTION_NOT_FOUND",
+                    "message": f"Solution '{solution_id}' not found",
+                    "available_solutions": list(session.solutions.keys())
+                }
+            }, indent=2))]
+
+        # Get mesh info
+        mesh_info = session.get_mesh(solution_info.mesh_id)
+        if mesh_info is None:
+            return [TextContent(type="text", text=json.dumps({
+                "error": {
+                    "code": "MESH_NOT_FOUND",
+                    "message": f"Mesh '{solution_info.mesh_id}' for solution not found"
+                }
+            }, indent=2))]
+
+        # Load the mesh
+        mesh_path = mesh_info.mesh_path
+        mesh_file = os.path.join(mesh_path, "mesh.xdmf")
+
+        mesh = d.Mesh()
+        with d.XDMFFile(mesh_file) as f:
+            f.read(mesh)
+
+        # Create function space and load field
+        V = d.FunctionSpace(mesh, "CG", 1)
+        field = d.Function(V)
+
+        # Determine solution path (same root as mesh structure)
+        # mesh_path is like /tmp/selcie_meshes/Saved Meshes/mesh_001
+        # We need /tmp/selcie_meshes/Saved Solutions/solution_001
+        mesh_dir = os.path.dirname(mesh_path)  # /tmp/selcie_meshes/Saved Meshes
+        root_dir = os.path.dirname(mesh_dir)   # /tmp/selcie_meshes
+        solution_path = os.path.join(root_dir, "Saved Solutions", solution_id)
+        field_file = os.path.join(solution_path, "field.h5")
+
+        if not os.path.exists(field_file):
+            return [TextContent(type="text", text=json.dumps({
+                "error": {
+                    "code": "FIELD_NOT_FOUND",
+                    "message": f"Field file not found at {field_file}"
+                }
+            }, indent=2))]
+
+        with d.HDF5File(mesh.mpi_comm(), field_file, "r") as f:
+            f.read(field, "field")
+
+        # Load gradient magnitude if needed and available
+        grad_mag = None
+        if "gradient_magnitude" in quantities or "fifth_force_g" in quantities:
+            grad_mag_file = os.path.join(solution_path, "field_grad_mag.h5")
+            if os.path.exists(grad_mag_file):
+                # Try CG1 first (same as field), then DG0 if that fails
+                for space_type in ["CG1", "DG0"]:
+                    try:
+                        if space_type == "CG1":
+                            V_grad = V
+                        else:
+                            V_grad = d.FunctionSpace(mesh, "DG", 0)
+                        grad_mag = d.Function(V_grad)
+                        with d.HDF5File(mesh.mpi_comm(), grad_mag_file, "r") as f:
+                            f.read(grad_mag, "field_grad_mag")
+                        break  # Success
+                    except Exception:
+                        grad_mag = None
+                        continue
+
+        # Get mesh bounds for radial mode
+        coords = mesh.coordinates()
+        mesh_bounds = {
+            "r_min": float(coords[:, 0].min()),
+            "r_max": float(coords[:, 0].max()),
+            "z_min": float(coords[:, 1].min()),
+            "z_max": float(coords[:, 1].max())
+        }
+
+        # Generate evaluation points based on mode
+        if mode == "radial":
+            points, position_values = _generate_radial_points(params, mesh_bounds)
+            position_key = "r"
+        elif mode == "line":
+            if "start" not in params or "end" not in params:
+                return [TextContent(type="text", text=json.dumps({
+                    "error": {
+                        "code": "INVALID_PARAMS",
+                        "message": "Line mode requires 'start' and 'end' parameters"
+                    }
+                }, indent=2))]
+            points, position_values = _generate_line_points(params)
+            position_key = "distance"
+        elif mode == "points":
+            if "coordinates" not in params:
+                return [TextContent(type="text", text=json.dumps({
+                    "error": {
+                        "code": "INVALID_PARAMS",
+                        "message": "Points mode requires 'coordinates' parameter"
+                    }
+                }, indent=2))]
+            points = np.array(params["coordinates"])
+            position_values = None
+            position_key = None
+        elif mode == "grid":
+            if "r_range" not in params or "z_range" not in params:
+                return [TextContent(type="text", text=json.dumps({
+                    "error": {
+                        "code": "INVALID_PARAMS",
+                        "message": "Grid mode requires 'r_range' and 'z_range' parameters"
+                    }
+                }, indent=2))]
+            try:
+                points, r_values, z_values = _generate_grid_points(params)
+            except KeyError as e:
+                return [TextContent(type="text", text=json.dumps({
+                    "error": {
+                        "code": "INVALID_PARAMS",
+                        "message": f"Grid mode missing required parameter: {e}"
+                    }
+                }, indent=2))]
+            position_key = "grid"
+        elif mode == "max_in_region":
+            return await _handle_max_in_region(
+                arguments, mesh, field, grad_mag, mesh_info, solution_info, mesh_bounds
+            )
+        else:
+            return [TextContent(type="text", text=json.dumps({
+                "error": {
+                    "code": "INVALID_MODE",
+                    "message": f"Unknown mode: {mode}"
+                }
+            }, indent=2))]
+
+        # Evaluate quantities at points
+        n_points = len(points)
+        data = {}
+        valid_mask = np.ones(n_points, dtype=bool)
+
+        # Evaluate field at all points
+        field_values = np.zeros(n_points)
+        for i, pt in enumerate(points):
+            try:
+                field_values[i] = field(pt[0], pt[1])
+            except RuntimeError:
+                # Point outside mesh
+                field_values[i] = np.nan
+                valid_mask[i] = False
+
+        if "field" in quantities:
+            data["field"] = field_values.tolist()
+
+        # Evaluate gradient magnitude
+        if ("gradient_magnitude" in quantities or "fifth_force_g" in quantities) and grad_mag is not None:
+            grad_values = np.zeros(n_points)
+            for i, pt in enumerate(points):
+                try:
+                    grad_values[i] = grad_mag(pt[0], pt[1])
+                except RuntimeError:
+                    grad_values[i] = np.nan
+
+            if "gradient_magnitude" in quantities:
+                data["gradient_magnitude"] = grad_values.tolist()
+
+            # Fifth force in units of g (needs physical conversion)
+            # For now, just return gradient magnitude as proxy
+            if "fifth_force_g" in quantities:
+                # This would need beta and physical scales to convert properly
+                # For now, note that fifth_force ~ grad_phi / M where M = M_pl / beta
+                data["fifth_force_g"] = grad_values.tolist()
+                data["fifth_force_g_note"] = "Currently returns |∇φ| in dimensionless units. Multiply by (M_pl/β) × (Λ/L) × (1/g) for physical units."
+
+        # Adiabatic field comparison (would need density info)
+        if "adiabatic_field" in quantities:
+            # phi_adiabatic = rho^{-1/(n+1)}
+            # We don't have density stored, so skip for now
+            data["adiabatic_field_note"] = "Adiabatic comparison requires density profile (not yet implemented)"
+
+        # Build response
+        result = {
+            "solution_id": solution_id,
+            "mode": mode,
+            "n_points": n_points,
+            "n_valid": int(valid_mask.sum()),
+            "data": data
+        }
+
+        # Add position data
+        if mode == "radial":
+            result["data"]["r"] = position_values.tolist()
+        elif mode == "line":
+            result["data"]["distance"] = position_values.tolist()
+            result["data"]["coordinates"] = points.tolist()
+        elif mode == "points":
+            result["data"]["coordinates"] = points.tolist()
+        elif mode == "grid":
+            result["r_values"] = r_values.tolist()
+            result["z_values"] = z_values.tolist()
+            result["grid_shape"] = [len(z_values), len(r_values)]
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    except Exception as e:
+        return [TextContent(type="text", text=json.dumps({
+            "error": {
+                "code": "EVALUATE_ERROR",
+                "message": str(e)
+            }
+        }, indent=2))]
+
+
+async def _handle_max_in_region(
+    arguments: dict[str, Any],
+    mesh,
+    field,
+    grad_mag,
+    mesh_info,
+    solution_info,
+    mesh_bounds: dict
+) -> list[TextContent]:
+    """Handle max_in_region mode."""
+    import dolfin as d
+
+    params = arguments.get("params", {})
+    quantities = arguments.get("quantities", ["field", "gradient_magnitude"])
+
+    region = params.get("region", "vacuum")
+    min_distance_from = params.get("min_distance_from")
+    min_distance = params.get("min_distance", 0)
+    n_samples = params.get("n_samples", 1000)
+
+    # Load the subdomain markers
+    mesh_path = mesh_info.mesh_path
+    subdomains_file = os.path.join(mesh_path, "mesh.xdmf")
+
+    # Read subdomain markers
+    mvc = d.MeshValueCollection("size_t", mesh, mesh.topology().dim())
+    with d.XDMFFile(subdomains_file) as f:
+        f.read(mvc, "Subdomain")
+    subdomains = d.MeshFunction("size_t", mesh, mvc)
+
+    # Get region marker
+    regions = mesh_info.regions
+    if region not in regions:
+        return [TextContent(type="text", text=json.dumps({
+            "error": {
+                "code": "INVALID_REGION",
+                "message": f"Region '{region}' not found. Available: {list(regions.keys())}"
+            }
+        }, indent=2))]
+
+    target_marker = regions[region]
+
+    # Get source region marker for distance calculation
+    source_marker = None
+    if min_distance_from:
+        if min_distance_from not in regions:
+            return [TextContent(type="text", text=json.dumps({
+                "error": {
+                    "code": "INVALID_REGION",
+                    "message": f"Region '{min_distance_from}' not found. Available: {list(regions.keys())}"
+                }
+            }, indent=2))]
+        source_marker = regions[min_distance_from]
+
+    # Collect cell centers in target region
+    target_cells = []
+    target_centers = []
+    for cell in d.cells(mesh):
+        if subdomains[cell] == target_marker:
+            target_cells.append(cell.index())
+            target_centers.append(cell.midpoint().array()[:2])
+
+    target_centers = np.array(target_centers)
+
+    if len(target_centers) == 0:
+        return [TextContent(type="text", text=json.dumps({
+            "error": {
+                "code": "EMPTY_REGION",
+                "message": f"No cells found in region '{region}'"
+            }
+        }, indent=2))]
+
+    # If min_distance_from is specified, compute distances
+    if source_marker is not None and min_distance > 0:
+        # Collect unique vertex indices from source region cells
+        source_vertex_indices = set()
+        for cell in d.cells(mesh):
+            if subdomains[cell] == source_marker:
+                for vertex in d.vertices(cell):
+                    source_vertex_indices.add(vertex.index())
+
+        if len(source_vertex_indices) == 0:
+            return [TextContent(type="text", text=json.dumps({
+                "error": {
+                    "code": "EMPTY_REGION",
+                    "message": f"No cells found in region '{min_distance_from}'"
+                }
+            }, indent=2))]
+
+        # Get coordinates of unique vertices
+        coords = mesh.coordinates()
+        source_boundary_points = coords[list(source_vertex_indices), :2]
+
+        # Filter target points by distance from source boundary
+        valid_mask = np.ones(len(target_centers), dtype=bool)
+        for i, pt in enumerate(target_centers):
+            distances = np.linalg.norm(source_boundary_points - pt, axis=1)
+            if distances.min() < min_distance:
+                valid_mask[i] = False
+
+        target_centers = target_centers[valid_mask]
+
+        if len(target_centers) == 0:
+            return [TextContent(type="text", text=json.dumps({
+                "error": {
+                    "code": "NO_VALID_POINTS",
+                    "message": f"No points in '{region}' are >= {min_distance} from '{min_distance_from}'"
+                }
+            }, indent=2))]
+
+    # Sample points (or use all if fewer than n_samples)
+    if len(target_centers) > n_samples:
+        indices = np.random.choice(len(target_centers), n_samples, replace=False)
+        sample_points = target_centers[indices]
+    else:
+        sample_points = target_centers
+
+    n_valid = len(sample_points)
+
+    # Evaluate quantities at sample points
+    data = {}
+
+    # Field values
+    field_values = np.array([field(pt[0], pt[1]) for pt in sample_points])
+
+    if "field" in quantities:
+        max_idx = np.argmax(field_values)
+        min_idx = np.argmin(field_values)
+        data["field"] = {
+            "max": float(field_values[max_idx]),
+            "max_location": sample_points[max_idx].tolist(),
+            "min": float(field_values[min_idx]),
+            "min_location": sample_points[min_idx].tolist(),
+            "mean": float(np.mean(field_values))
+        }
+
+    # Gradient magnitude
+    if ("gradient_magnitude" in quantities or "fifth_force_g" in quantities) and grad_mag is not None:
+        grad_values = np.array([grad_mag(pt[0], pt[1]) for pt in sample_points])
+
+        if "gradient_magnitude" in quantities:
+            max_idx = np.argmax(grad_values)
+            min_idx = np.argmin(grad_values)
+            data["gradient_magnitude"] = {
+                "max": float(grad_values[max_idx]),
+                "max_location": sample_points[max_idx].tolist(),
+                "min": float(grad_values[min_idx]),
+                "min_location": sample_points[min_idx].tolist(),
+                "mean": float(np.mean(grad_values))
+            }
+
+        if "fifth_force_g" in quantities:
+            max_idx = np.argmax(grad_values)
+            min_idx = np.argmin(grad_values)
+            data["fifth_force_g"] = {
+                "max": float(grad_values[max_idx]),
+                "max_location": sample_points[max_idx].tolist(),
+                "min": float(grad_values[min_idx]),
+                "min_location": sample_points[min_idx].tolist(),
+                "mean": float(np.mean(grad_values)),
+                "note": "Values in dimensionless units |∇φ|"
+            }
+
+    result = {
+        "solution_id": arguments["solution_id"],
+        "mode": "max_in_region",
+        "region": region,
+        "min_distance_from": min_distance_from,
+        "min_distance": min_distance,
+        "n_samples": n_samples,
+        "n_valid_samples": n_valid,
+        "data": data
+    }
+
+    return [TextContent(type="text", text=json.dumps(result, indent=2))]

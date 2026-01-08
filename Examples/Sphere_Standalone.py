@@ -443,6 +443,81 @@ def main():
         print(f"   Plot saved to: {plot_filename}")
         plt.close()
 
+        # -------------------------------------------------------------------------
+        # Additional 1D radial profile plots (for comparison with MCP output)
+        # -------------------------------------------------------------------------
+        print("   Generating 1D radial profiles...")
+
+        # Sample radial points along r-axis (z=0)
+        n_radial = 200
+        r_min = 0.01
+        r_max = 0.9
+        r_radial = np.linspace(r_min, r_max, n_radial)
+
+        field_radial = []
+        grad_radial = []
+        r_valid = []
+
+        for r in r_radial:
+            try:
+                phi = solver.field([r, 0.0])
+                grad = solver.field_grad([r, 0.0])
+                grad_mag = np.linalg.norm(grad)
+                field_radial.append(phi)
+                grad_radial.append(grad_mag)
+                r_valid.append(r)
+            except RuntimeError:
+                pass  # Point outside mesh
+
+        r_valid = np.array(r_valid)
+        field_radial = np.array(field_radial)
+        grad_radial = np.array(grad_radial)
+
+        # Create 1D profile figure
+        fig2, axes2 = plt.subplots(1, 2, figsize=(12, 5))
+
+        # Panel 1: Field radial profile φ(r)
+        ax_field = axes2[0]
+        ax_field.plot(r_valid, field_radial, 'b-', linewidth=2, label='φ(r)')
+        ax_field.axvline(x=actual_radius, color='gray', linestyle='--', alpha=0.7, label=f'Source radius ({actual_radius:.3f})')
+        ax_field.set_xlabel('r', fontsize=11)
+        ax_field.set_ylabel('φ', fontsize=11)
+        ax_field.set_title(f'Radial Field Profile (α={alpha:.2e})', fontsize=12)
+        ax_field.set_yscale('log')
+        ax_field.grid(True, alpha=0.3)
+        ax_field.legend()
+
+        # Panel 2: Gradient magnitude |∇φ|(r)
+        ax_grad = axes2[1]
+        ax_grad.plot(r_valid, grad_radial, 'r-', linewidth=2, label='|∇φ|(r)')
+        ax_grad.axvline(x=actual_radius, color='gray', linestyle='--', alpha=0.7, label=f'Source radius ({actual_radius:.3f})')
+        ax_grad.axvline(x=actual_radius + measuring_distance, color='green', linestyle=':', alpha=0.7, label=f'Measuring boundary ({actual_radius + measuring_distance:.3f})')
+        ax_grad.set_xlabel('r', fontsize=11)
+        ax_grad.set_ylabel('|∇φ|', fontsize=11)
+        ax_grad.set_title(f'Radial Gradient Magnitude (α={alpha:.2e})', fontsize=12)
+        ax_grad.set_yscale('log')
+        ax_grad.grid(True, alpha=0.3)
+        ax_grad.legend()
+
+        plt.suptitle(f'1D Radial Profiles - Sphere R={actual_radius:.4f}', fontsize=14)
+        plt.tight_layout()
+
+        plot_filename_1d = images_dir / "sphere_standalone_1d.png"
+        plt.savefig(plot_filename_1d, dpi=150)
+        print(f"   1D profiles saved to: {plot_filename_1d}")
+        plt.close()
+
+        # Also save the raw data to CSV for exact comparison
+        csv_filename = images_dir / "sphere_standalone_radial.csv"
+        np.savetxt(
+            csv_filename,
+            np.column_stack([r_valid, field_radial, grad_radial]),
+            header='r,field,gradient_magnitude',
+            delimiter=',',
+            comments=''
+        )
+        print(f"   Radial data saved to: {csv_filename}")
+
     # Clean up mesh files
     mesh_path = Path("Saved Meshes") / MESH_NAME
     if mesh_path.exists():

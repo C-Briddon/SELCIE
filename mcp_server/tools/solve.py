@@ -17,15 +17,17 @@ TOOL_DEFINITION = Tool(
 
 Uses SELCIE's Picard or Newton solver to compute the chameleon scalar field
 throughout the domain. The dimensionless field equation is:
-    α ∇²φ + φ^{-(n+1)} = ρ
+    α ∇²φ + φ^{-(n+1)} = ρ̂
+
+where ρ̂ = ρ/ρ₀ is the dimensionless density (ρ₀ is the reference density used to compute α).
 
 Parameters:
 - mesh_id: Reference to a previously created mesh
 - alpha: Dimensionless coupling constant (from calculate_physical_parameters)
-- density: Dictionary mapping region names to density specifications
+- density: Dimensionless density ρ̂ = ρ/ρ₀ per region (e.g., if ρ₀ = vacuum density, then vacuum → 1.0)
 - n: Potential power (default: 1)
 - method: Solver method - "picard", "newton", or "auto"
-- tol: Convergence tolerance (default: 1e-8)
+- tol: Convergence tolerance (default: 1e-14)
 - max_iter: Maximum iterations (default: 100)
 - relaxation: Relaxation factor for Picard (default: 1.0)
 - initial_guess: "constant" (default), "adiabatic", or "previous"
@@ -43,7 +45,7 @@ Parameters:
             },
             "density": {
                 "type": "object",
-                "description": "Density per region. Each key is a region name, value is: number, {expression: str}, or {file: str, skip_header?: int}",
+                "description": "Dimensionless density ρ̂ = ρ/ρ₀ per region (ρ₀ is the reference density used to compute α). Each key is a region name, value is: number, {expression: str}, or {file: str, skip_header?: int}",
                 "additionalProperties": True
             },
             "n": {
@@ -59,8 +61,8 @@ Parameters:
             },
             "tol": {
                 "type": "number",
-                "description": "Convergence tolerance. Default: 1e-8",
-                "default": 1e-8
+                "description": "Convergence tolerance. Default: 1e-14",
+                "default": 1e-14
             },
             "max_iter": {
                 "type": "integer",
@@ -272,7 +274,7 @@ async def handle(arguments: dict) -> list[TextContent]:
     density_spec = arguments["density"]
     n = arguments.get("n", 1)
     method = arguments.get("method", "auto")
-    tol = arguments.get("tol", 1e-8)
+    tol = arguments.get("tol", 1e-14)
     max_iter = arguments.get("max_iter", 100)
     relaxation = arguments.get("relaxation", 1.0)
     initial_guess = arguments.get("initial_guess", "constant")
