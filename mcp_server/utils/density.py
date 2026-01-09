@@ -34,6 +34,71 @@ SPHERICAL_GEOMETRIES = {
     "shell_in_vacuum",
 }
 
+# Supported file extensions for density profiles
+SUPPORTED_EXTENSIONS = {".txt", ".dat", ".csv", ".npy", ".npz"}
+
+
+def _load_density_file(file_path: str, skip_header: int = 0, npz_key: str = "data") -> np.ndarray:
+    """
+    Load density profile data from various file formats.
+
+    Supported formats:
+        - .txt, .dat: Whitespace-separated text (numpy.loadtxt)
+        - .csv: Comma-separated values
+        - .npy: NumPy binary format
+        - .npz: NumPy compressed format (uses npz_key to select array)
+
+    Args:
+        file_path: Path to the data file
+        skip_header: Number of header rows to skip (text formats only)
+        npz_key: Key to use for .npz files (default: "data")
+
+    Returns:
+        2D numpy array with shape (n_points, n_columns)
+
+    Raises:
+        ValueError: If file format is unsupported or data is invalid
+        FileNotFoundError: If file doesn't exist
+    """
+    import os
+    ext = os.path.splitext(file_path)[1].lower()
+
+    if ext in {".txt", ".dat"}:
+        # Whitespace-separated text
+        data = np.loadtxt(file_path, skiprows=skip_header)
+
+    elif ext == ".csv":
+        # Comma-separated values
+        data = np.loadtxt(file_path, delimiter=",", skiprows=skip_header)
+
+    elif ext == ".npy":
+        # NumPy binary format
+        data = np.load(file_path)
+        if skip_header > 0:
+            data = data[skip_header:]
+
+    elif ext == ".npz":
+        # NumPy compressed format
+        with np.load(file_path) as npz:
+            if npz_key not in npz:
+                available = list(npz.keys())
+                raise ValueError(
+                    f"Key '{npz_key}' not found in .npz file. "
+                    f"Available keys: {available}. "
+                    f"Use 'npz_key' parameter to specify the correct key."
+                )
+            data = npz[npz_key]
+        if skip_header > 0:
+            data = data[skip_header:]
+
+    else:
+        raise ValueError(
+            f"Unsupported file format '{ext}'. "
+            f"Supported formats: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
+        )
+
+    return data
+
 
 def get_coordinate_info(symmetry: str, geometry: str = None, dimension: int = 2) -> dict:
     """
@@ -193,9 +258,17 @@ def create_density_function(
     if isinstance(spec, dict) and "file" in spec:
         file_path = spec["file"]
         skip_header = spec.get("skip_header", 0)
+        npz_key = spec.get("npz_key", "data")  # Key for .npz files
 
-        # Load data
-        data = np.loadtxt(file_path, skiprows=skip_header)
+        # Load data based on file extension
+        data = _load_density_file(file_path, skip_header, npz_key)
+
+        # Ensure 2D array
+        if data.ndim == 1:
+            raise ValueError(
+                f"File '{file_path}' contains only 1D data. "
+                "Need at least 2 columns (position, density)."
+            )
         n_cols = data.shape[1]
 
         is_spherical = geometry in SPHERICAL_GEOMETRIES

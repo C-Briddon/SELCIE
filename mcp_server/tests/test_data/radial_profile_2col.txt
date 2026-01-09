@@ -1,0 +1,11 @@
+# Radial density profile (r, rho)
+# r is spherical radius for spherical geometries, cylindrical otherwise
+0.0   1e6
+0.05  1e6
+0.10  1e5
+0.15  1e4
+0.20  1e3
+0.30  1e2
+0.50  10.0
+0.80  1.0
+1.00  1.0

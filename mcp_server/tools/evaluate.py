@@ -467,12 +467,12 @@ async def _handle_max_in_region(
         coords = mesh.coordinates()
         source_boundary_points = coords[list(source_vertex_indices), :2]
 
-        # Filter target points by distance from source boundaries
-        valid_mask = np.ones(len(target_centers), dtype=bool)
-        for i, pt in enumerate(target_centers):
-            distances = np.linalg.norm(source_boundary_points - pt, axis=1)
-            if distances.min() < min_distance:
-                valid_mask[i] = False
+        # Filter target points by distance from source boundaries using KD-tree
+        # This is O(N log M) instead of O(N × M) for the naive approach
+        from scipy.spatial import cKDTree
+        tree = cKDTree(source_boundary_points)
+        distances, _ = tree.query(target_centers, k=1)
+        valid_mask = distances >= min_distance
 
         target_centers = target_centers[valid_mask]
 
