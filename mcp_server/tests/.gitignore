@@ -2,3 +2,6 @@
 *.png
 *.csv
 *.pdf
+
+# Allow test data files
+!test_data/
