@@ -250,6 +250,24 @@ def _get_mesh_dir() -> str:
     return mesh_dir
 
 
+def _sphere_points(radius: float, n_points: int = 50) -> list:
+    """Generate points for a sphere boundary (half-plane for axisymmetric)."""
+    import numpy as np
+    theta = np.linspace(0, np.pi, n_points, endpoint=True)
+    r = radius * np.sin(theta)  # radial distance from axis
+    z = radius * np.cos(theta)  # height along axis
+    return [[float(ri), float(zi), 0.0] for ri, zi in zip(r, z)]
+
+
+def _ellipse_points(rx: float, ry: float, n_points: int = 50) -> list:
+    """Generate points for an ellipse boundary (half-plane for axisymmetric)."""
+    import numpy as np
+    theta = np.linspace(0, np.pi, n_points, endpoint=True)
+    r = rx * np.sin(theta)  # radial distance from axis
+    z = ry * np.cos(theta)  # height along axis
+    return [[float(ri), float(zi), 0.0] for ri, zi in zip(r, z)]
+
+
 def _create_sphere_in_vacuum(
     MT: MeshingTools,
     params: dict,
@@ -260,8 +278,12 @@ def _create_sphere_in_vacuum(
     vacuum_radius = params["vacuum_radius"]
     wall_thickness = params.get("wall_thickness")
 
-    # Create the sphere
-    MT.create_ellipse(rx=object_radius, ry=object_radius)
+    # Create the sphere using explicit points for smooth boundary
+    # (using create_ellipse results in jagged boundaries due to GMSH arc discretization)
+    n_boundary_points = 50  # Matches Sphere_Standalone.py
+    points = _sphere_points(object_radius, n_boundary_points)
+    points = MT.constrain_distance(points)
+    MT.points_to_surface(points)
 
     # Mark as subdomain with refinement
     cell_min = quality["cell_min_factor"] * object_radius
@@ -279,6 +301,7 @@ def _create_sphere_in_vacuum(
         DistMax=bg_dist_max,
         background_radius=vacuum_radius,
         wall_thickness=wall_thickness,  # None if not specified
+        symmetry="vertical",  # Axisymmetric - only mesh r >= 0
     )
 
     regions = ["object", "vacuum"]
@@ -305,8 +328,11 @@ def _create_ellipse_in_vacuum(
     ry = params["ry"]
     vacuum_radius = params["vacuum_radius"]
 
-    # Create the ellipse
-    MT.create_ellipse(rx=rx, ry=ry)
+    # Create the ellipse using explicit points for smooth boundary
+    n_boundary_points = 50
+    points = _ellipse_points(rx, ry, n_boundary_points)
+    points = MT.constrain_distance(points)
+    MT.points_to_surface(points)
 
     # Mark as subdomain with refinement
     char_size = max(rx, ry)
@@ -324,6 +350,7 @@ def _create_ellipse_in_vacuum(
         DistMax=dist_max,
         background_radius=vacuum_radius,
         wall_thickness=None,
+        symmetry="vertical",  # Axisymmetric
     )
 
     regions = ["object", "vacuum"]
@@ -356,6 +383,7 @@ def _create_disk(
         DistMax=dist_max,
         background_radius=radius,
         wall_thickness=None,
+        symmetry="vertical",  # Axisymmetric
     )
 
     regions = ["domain"]
@@ -405,14 +433,35 @@ def _create_shell_in_vacuum(
     quality: dict,
 ) -> tuple[list[str], dict]:
     """Create hollow shell in vacuum geometry."""
+    import numpy as np
+
     inner_radius = params["inner_radius"]
     outer_radius = params["outer_radius"]
     vacuum_radius = params["vacuum_radius"]
 
-    # Create outer sphere and inner sphere, then subtract
-    outer = MT.create_ellipse(rx=outer_radius, ry=outer_radius)
-    inner = MT.create_ellipse(rx=inner_radius, ry=inner_radius)
-    shell = MT.subtract_shapes(outer, inner)
+    # Create shell as a closed polygon (outer boundary + inner boundary reversed)
+    # This defines a shell annulus in axisymmetric coords
+    n_points = 30
+
+    # Outer semicircle: from top (0, outer_r) to bottom (0, -outer_r)
+    theta_outer = np.linspace(0, np.pi, n_points, endpoint=True)
+    outer_r = outer_radius * np.sin(theta_outer)
+    outer_z = outer_radius * np.cos(theta_outer)
+
+    # Inner semicircle: from bottom (0, -inner_r) to top (0, inner_r) - reversed
+    theta_inner = np.linspace(np.pi, 0, n_points, endpoint=True)
+    inner_r = inner_radius * np.sin(theta_inner)
+    inner_z = inner_radius * np.cos(theta_inner)
+
+    # Combine into closed loop (outer down, inner up)
+    shell_points = []
+    for ri, zi in zip(outer_r, outer_z):
+        shell_points.append([float(ri), float(zi), 0.0])
+    for ri, zi in zip(inner_r, inner_z):
+        shell_points.append([float(ri), float(zi), 0.0])
+
+    shell_points = MT.constrain_distance(shell_points)
+    MT.points_to_surface(shell_points)
 
     # Mark as subdomain with refinement
     char_size = outer_radius - inner_radius
@@ -430,6 +479,7 @@ def _create_shell_in_vacuum(
         DistMax=dist_max,
         background_radius=vacuum_radius,
         wall_thickness=None,
+        symmetry="vertical",  # Axisymmetric
     )
 
     regions = ["shell", "vacuum"]
@@ -473,6 +523,7 @@ def _create_cylinder_in_vacuum(
         DistMax=dist_max,
         background_radius=vacuum_radius,
         wall_thickness=None,
+        symmetry="vertical",  # Axisymmetric
     )
 
     regions = ["cylinder", "vacuum"]
@@ -505,6 +556,7 @@ def _create_sphere_domain(
         DistMax=dist_max,
         background_radius=radius,
         wall_thickness=None,
+        symmetry="vertical",  # Axisymmetric
     )
 
     regions = ["domain"]
@@ -529,16 +581,22 @@ def _create_two_spheres(
     separation = params["separation"]
     vacuum_radius = params["vacuum_radius"]
 
-    # Create first sphere (source) at origin
-    s1 = MT.create_ellipse(rx=radius_1, ry=radius_1)
+    # Create first sphere (source) at origin using explicit points
+    n_boundary_points = 50
+    points_1 = _sphere_points(radius_1, n_boundary_points)
+    points_1 = MT.constrain_distance(points_1)
+    MT.points_to_surface(points_1)
     cell_min = quality["cell_min_factor"] * radius_1
     cell_max = quality["cell_max_factor"] * radius_1
     dist_max = quality["dist_max_factor"] * vacuum_radius
     MT.create_subdomain(CellSizeMin=cell_min, CellSizeMax=cell_max, DistMax=dist_max)
 
-    # Create second sphere (test mass) offset along z
-    s2 = MT.create_ellipse(rx=radius_2, ry=radius_2)
-    MT.translate_y(s2, dy=separation)  # Move along z-axis
+    # Create second sphere (test mass) offset along z using explicit points
+    points_2 = _sphere_points(radius_2, n_boundary_points)
+    # Offset z coordinate by separation
+    points_2 = [[p[0], p[1] + separation, p[2]] for p in points_2]
+    points_2 = MT.constrain_distance(points_2)
+    MT.points_to_surface(points_2)
     cell_min2 = quality["cell_min_factor"] * radius_2
     cell_max2 = quality["cell_max_factor"] * radius_2
     MT.create_subdomain(CellSizeMin=cell_min2, CellSizeMax=cell_max2, DistMax=dist_max)
@@ -552,6 +610,7 @@ def _create_two_spheres(
         DistMax=dist_max,
         background_radius=vacuum_radius,
         wall_thickness=None,
+        symmetry="vertical",  # Axisymmetric
     )
 
     regions = ["sphere_1", "sphere_2", "vacuum"]
@@ -710,6 +769,7 @@ def _create_custom_2d(
             DistMax=dist_max,
             background_radius=vacuum_radius,
             wall_thickness=0.1 * vacuum_radius,
+            symmetry="vertical",  # Axisymmetric
         )
 
     # Calculate actual bounds from points
