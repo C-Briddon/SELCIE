@@ -223,16 +223,16 @@ class TestDensityFunctions:
 
     def test_constant_density(self):
         """Test constant density function."""
-        from tools.solve import _create_density_function
+        from utils.density import create_density_function
 
-        func = _create_density_function(1e6, "axial", 2)
+        func = create_density_function(1e6, "axial", 2)
         assert func([0.5, 0.5]) == 1e6
 
     def test_expression_density_axial(self):
         """Test expression density in axial coordinates."""
-        from tools.solve import _create_density_function
+        from utils.density import create_density_function
 
-        func = _create_density_function(
+        func = create_density_function(
             {"expression": "r + z"},
             "axial", 2
         )
@@ -240,13 +240,56 @@ class TestDensityFunctions:
 
     def test_expression_density_cartesian(self):
         """Test expression density in Cartesian coordinates."""
-        from tools.solve import _create_density_function
+        from utils.density import create_density_function
 
-        func = _create_density_function(
+        func = create_density_function(
             {"expression": "x + y"},
             "none", 2
         )
         assert func([0.5, 0.3]) == 0.8
+
+    def test_expression_invalid_variable(self):
+        """Test that invalid variable in expression raises helpful error."""
+        from utils.density import create_density_function
+        import pytest
+
+        # For spherical geometry with axial symmetry, 'x' is not valid
+        with pytest.raises(ValueError) as exc_info:
+            create_density_function(
+                {"expression": "x + y"},
+                "axial", 2, "sphere_in_vacuum"
+            )
+
+        error_msg = str(exc_info.value)
+        assert "x" in error_msg  # mentions the invalid variable
+        assert "r (spherical radius" in error_msg  # suggests valid variables
+        assert "Available variables" in error_msg
+
+    def test_expression_spherical_r_is_spherical(self):
+        """Test that r is spherical radius for spherical geometries."""
+        from utils.density import create_density_function
+
+        # For sphere_in_vacuum, r should be spherical radius = sqrt(r_cyl^2 + z^2)
+        func = create_density_function(
+            {"expression": "r"},
+            "axial", 2, "sphere_in_vacuum"
+        )
+        # r_cyl=0.3, z=0.4 -> r_spherical = 0.5
+        result = func([0.3, 0.4])
+        assert abs(result - 0.5) < 1e-10
+
+    def test_expression_non_spherical_r_is_cylindrical(self):
+        """Test that r is cylindrical radius for non-spherical geometries."""
+        from utils.density import create_density_function
+
+        # For ellipse_in_vacuum, r should be cylindrical radius = x[0]
+        func = create_density_function(
+            {"expression": "r"},
+            "axial", 2, "ellipse_in_vacuum"
+        )
+        # r_cyl=0.3, z=0.4 -> r = 0.3 (cylindrical)
+        result = func([0.3, 0.4])
+        assert abs(result - 0.3) < 1e-10
 
 
 class TestMethodSelection:

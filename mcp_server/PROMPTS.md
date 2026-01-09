@@ -207,10 +207,62 @@
 > - Chameleon coupling: β = 10⁶, Λ = 2.4 meV, n = 1
 >
 > Please:
-> 1. Calculate the dimensionless parameters (α, ρ̂) using calculate_physical_parameters with the sphere as reference
-> 2. Report the screening regime and Compton wavelengths
-> 3. Create a mesh with physics-aware refinement using the computed parameters
-> 4. Solve for the chameleon field
-> 5. Plot the radial field profile and gradient magnitude
-> 6. Find the maximum fifth force acceleration in the vacuum region (at least 0.5 cm from all surfaces)
-> 7. Convert the result back to physical units (m/s²)
+> 1. Report the screening regime and Compton wavelengths
+> 2. Create a mesh with physics-aware refinement using the computed parameters
+> 3. Solve for the chameleon field
+> 4. Plot the radial field profile and gradient magnitude
+> 5. Find the maximum fifth force acceleration in the vacuum region (at least 0.5 cm from all surfaces)
+> 6. Convert the result back to physical units (m/s²)
+
+### Two-Sphere Interaction
+
+> I want to study the chameleon-mediated force between two spheres.
+>
+> Setup:
+> - Source sphere: radius 2 cm, tungsten (19.3 g/cm³)
+> - Test mass: radius 0.5 cm, aluminum (2.7 g/cm³)
+> - Separation (center to center): 5 cm
+> - Vacuum chamber radius: 20 cm
+> - Vacuum density: 10⁻¹⁰ g/cm³
+> - Chameleon: β = 10⁸, n = 1
+>
+> Calculate the field, show me the 2D field distribution, and find the maximum force on the test mass.
+
+### Solar Chameleon
+
+> I want to model the chameleon field profile inside and around the Sun.
+>
+> Setup:
+> - Sun: radius R☉ = 7×10⁸ m, average density 1.4 g/cm³
+> - Solar atmosphere/corona: extend to 2 R☉, density ~10⁻¹² g/cm³
+> - Chameleon: β = 1 (gravitational strength coupling), n = 1
+>
+> Please:
+> 1. Report whether the Sun is in the thin-shell or thick-shell regime
+> 2. Create a mesh and solve for the chameleon field
+> 3. Plot the radial field profile from the center to 2 R☉
+> 4. Find the maximum fifth force in the corona region
+
+### Neutron Star
+
+> Model the chameleon field around a neutron star to check screening.
+>
+> Setup:
+> - Neutron star: radius 10 km, average density 5×10¹⁴ g/cm³
+> - Surrounding medium: interstellar medium at 10⁻²⁴ g/cm³, extend to 100 km
+> - Chameleon: β = 1, n = 1
+>
+> I expect extreme screening. Calculate the field profile and report the thin-shell thickness relative to the star radius.
+
+### Galaxy Halo (NFW Profile)
+
+> Model the chameleon field in a Milky Way-like dark matter halo with an NFW density profile.
+>
+> Setup:
+> - NFW profile: ρ(r) = ρ_s / [(r/r_s)(1 + r/r_s)²]
+> - Scale radius: r_s = 20 kpc
+> - Characteristic density: ρ_s = 10⁻²⁵ g/cm³
+> - Domain: extend to 200 kpc (10 × r_s)
+> - Chameleon: β = 1, n = 1
+>
+> Use the NFW density as an expression. Plot the chameleon field profile and compare how it tracks the local density minimum.

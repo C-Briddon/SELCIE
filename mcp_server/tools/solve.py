@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Solve tool for SELCIE MCP server."""
 
+import json
 import os
 import time
-from typing import Any
 
 import numpy as np
 from mcp.types import TextContent, Tool
 
 from utils.session import get_session, SolutionInfo
+from utils.density import create_density_function, SPHERICAL_GEOMETRIES
 
 
 TOOL_DEFINITION = Tool(
@@ -45,7 +46,7 @@ Parameters:
             },
             "density": {
                 "type": "object",
-                "description": "Dimensionless density ρ̂ = ρ/ρ₀ per region (ρ₀ is the reference density used to compute α). Each key is a region name, value is: number, {expression: str}, or {file: str, skip_header?: int}",
+                "description": "Dimensionless density ρ̂ = ρ/ρ₀ per region (ρ₀ is the reference density used to compute α). Each key is a region name, value is: number, {expression: str}, or {file: str, skip_header?: int}. For expressions: spherical geometries use r=spherical radius; other geometries use r=cylindrical radius, R=spherical.",
                 "additionalProperties": True
             },
             "n": {
@@ -104,146 +105,6 @@ def _symmetry_to_selcie(symmetry: str) -> str:
     return mapping.get(symmetry, symmetry)
 
 
-def _create_density_function(spec: Any, mesh_symmetry: str, mesh_dimension: int) -> callable:
-    """
-    Create a density function from a specification.
-
-    Parameters
-    ----------
-    spec : Any
-        Density specification - number, dict with 'expression', or dict with 'file'
-    mesh_symmetry : str
-        Mesh symmetry ('axial' or 'none')
-    mesh_dimension : int
-        Mesh dimension (2 or 3)
-
-    Returns
-    -------
-    callable
-        Function that takes (x) and returns density
-    """
-    # Constant density
-    if isinstance(spec, (int, float)):
-        rho = float(spec)
-        return lambda x: rho
-
-    # Expression-based density
-    if isinstance(spec, dict) and "expression" in spec:
-        expr_str = spec["expression"]
-        # Build safe namespace for eval
-        safe_namespace = {
-            "np": np,
-            "sqrt": np.sqrt,
-            "exp": np.exp,
-            "log": np.log,
-            "log10": np.log10,
-            "sin": np.sin,
-            "cos": np.cos,
-            "tan": np.tan,
-            "abs": np.abs,
-            "pow": pow,
-            "pi": np.pi,
-        }
-
-        def expr_func(x):
-            # x is array-like: x[0], x[1], (x[2] for 3D)
-            local_vars = safe_namespace.copy()
-            if mesh_symmetry == "axial":
-                local_vars["r"] = x[0]
-                local_vars["z"] = x[1]
-            else:
-                local_vars["x"] = x[0]
-                local_vars["y"] = x[1]
-                if len(x) > 2:
-                    local_vars["z"] = x[2]
-            # Also provide r for Cartesian as sqrt(x^2 + y^2)
-            if mesh_symmetry != "axial":
-                local_vars["r"] = np.sqrt(x[0]**2 + x[1]**2)
-            return eval(expr_str, {"__builtins__": {}}, local_vars)
-
-        return expr_func
-
-    # File-based (tabulated) density
-    if isinstance(spec, dict) and "file" in spec:
-        file_path = spec["file"]
-        skip_header = spec.get("skip_header", 0)
-
-        # Load data
-        data = np.loadtxt(file_path, skiprows=skip_header)
-        n_cols = data.shape[1]
-
-        # Auto-detect column format based on symmetry and columns
-        if mesh_symmetry == "axial":
-            if n_cols == 2:
-                # (r, rho) - 1D radial profile
-                from scipy.interpolate import interp1d
-                r_data = data[:, 0]
-                rho_data = data[:, 1]
-                interp = interp1d(r_data, rho_data, bounds_error=False, fill_value=(rho_data[0], rho_data[-1]))
-
-                def tabulated_func(x):
-                    r = x[0]
-                    return float(interp(r))
-
-                return tabulated_func
-
-            elif n_cols == 3:
-                # (r, z, rho) - 2D axisymmetric profile
-                from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
-                r_data = data[:, 0]
-                z_data = data[:, 1]
-                rho_data = data[:, 2]
-                points = np.column_stack([r_data, z_data])
-                interp = LinearNDInterpolator(points, rho_data)
-                nearest = NearestNDInterpolator(points, rho_data)
-
-                def tabulated_func(x):
-                    r, z = x[0], x[1]
-                    val = interp(r, z)
-                    if np.isnan(val):
-                        val = nearest(r, z)
-                    return float(val)
-
-                return tabulated_func
-
-        else:  # none symmetry
-            if n_cols == 3 and mesh_dimension == 2:
-                # (x, y, rho) - 2D Cartesian
-                from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
-                points = data[:, :2]
-                rho_data = data[:, 2]
-                interp = LinearNDInterpolator(points, rho_data)
-                nearest = NearestNDInterpolator(points, rho_data)
-
-                def tabulated_func(x):
-                    val = interp(x[0], x[1])
-                    if np.isnan(val):
-                        val = nearest(x[0], x[1])
-                    return float(val)
-
-                return tabulated_func
-
-            elif n_cols == 4 and mesh_dimension == 3:
-                # (x, y, z, rho) - 3D Cartesian
-                from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
-                points = data[:, :3]
-                rho_data = data[:, 3]
-                interp = LinearNDInterpolator(points, rho_data)
-                nearest = NearestNDInterpolator(points, rho_data)
-
-                def tabulated_func(x):
-                    val = interp(x[0], x[1], x[2])
-                    if np.isnan(val):
-                        val = nearest(x[0], x[1], x[2])
-                    return float(val)
-
-                return tabulated_func
-
-        raise ValueError(f"Unsupported column count {n_cols} for symmetry '{mesh_symmetry}' and dimension {mesh_dimension}")
-
-    raise ValueError(f"Invalid density specification: {spec}")
-
-
 def _choose_method(alpha: float, method: str) -> tuple[str, float]:
     """
     Choose solver method and relaxation based on alpha.
@@ -298,6 +159,7 @@ async def handle(arguments: dict) -> list[TextContent]:
     mesh_path = mesh_info.mesh_path
     mesh_dimension = mesh_info.dimension
     mesh_symmetry = mesh_info.symmetry
+    mesh_geometry = mesh_info.geometry
     regions = mesh_info.regions
     n_cells = mesh_info.n_cells
 
@@ -333,7 +195,13 @@ async def handle(arguments: dict) -> list[TextContent]:
             )]
 
         marker = regions[region_name]
-        func = _create_density_function(density_value, mesh_symmetry, mesh_dimension)
+        try:
+            func = create_density_function(density_value, mesh_symmetry, mesh_dimension, mesh_geometry)
+        except ValueError as e:
+            return [TextContent(
+                type="text",
+                text=json.dumps({"error": {"code": "INVALID_EXPRESSION", "message": str(e)}}, indent=2)
+            )]
         marker_to_func[marker] = func
 
         # Track density stats (estimate from constant or sample expression)
