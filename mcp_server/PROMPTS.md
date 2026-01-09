@@ -189,11 +189,10 @@
 > 1. Create a mesh for this geometry (sphere_in_vacuum with object_radius=0.1337)
 > 2. Plot the mesh to show the geometry
 > 3. Solve for the chameleon field
-> 4. Plot the radial field profile φ(r)
-> 5. Plot the 2D field distribution
-> 6. Plot the gradient magnitude |∇φ|(r) which is related to the fifth force
-> 7. Find the max fifth gradient in vacuum at least 0.05 away from ALL other domains (object and wall)
-> 8. Save the plots in this directory
+> 4. Plot the radial field profile φ(r) and gradient magnitude |∇φ|(r) w
+> 5. Plot the 2D density, field distribution, and gradient magnitude
+> 6. Find the max fifth gradient in vacuum at least 0.05 away from ALL other domains (object and wall)
+> 7. Save the plots in this directory
 
 ### Sphere in Vacuum (Physical Parameters)
 
@@ -230,18 +229,20 @@
 
 ### Solar Chameleon
 
-> I want to model the chameleon field profile inside and around the Sun.
+> I want to model the chameleon field profile inside and around the Sun using the Standard Solar Model.
 >
 > Setup:
-> - Sun: radius R☉ = 7×10⁸ m, average density 1.4 g/cm³
+> - Use the AGSS09 solar model from `AGSS09_solar_model.dat`
+> - Sun: radius R☉ = 7×10⁸ m
 > - Solar atmosphere/corona: extend to 2 R☉, density ~10⁻¹² g/cm³
 > - Chameleon: β = 1 (gravitational strength coupling), n = 1
 >
 > Please:
 > 1. Report whether the Sun is in the thin-shell or thick-shell regime
-> 2. Create a mesh and solve for the chameleon field
-> 3. Plot the radial field profile from the center to 2 R☉
-> 4. Find the maximum fifth force in the corona region
+> 2. Create a mesh for sphere_in_vacuum with the Sun as the object
+> 3. Solve using the tabulated density profile
+> 4. Plot the radial field profile from the center to 2 R☉
+> 5. Find the maximum fifth force in the corona region
 
 ### Neutron Star
 
@@ -266,3 +267,19 @@
 > - Chameleon: β = 1, n = 1
 >
 > Use the NFW density as an expression. Plot the chameleon field profile and compare how it tracks the local density minimum.
+
+### N-body Cosmological Simulation
+
+> Model the chameleon field in a 2D slice from an N-body cosmological simulation.
+>
+> Setup:
+> - Density grid from `nbody.npy` (units: M☉/Mpc³)
+> - Box size: 25 Mpc × 25 Mpc
+> - Chameleon: β = 10^{-4}, n = 1
+>
+> Please:
+> 1. Calculate physical parameters using cosmic mean density as reference
+> 2. Create a 2D Cartesian box mesh covering [0, 25] × [0, 25] Mpc
+> 3. Plot the 2D field distribution overlaid on the density structure
+> 4. Compare with the adiabatic solution 
+> 4. Identify where the field is screened vs unscreened

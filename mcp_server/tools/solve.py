@@ -46,7 +46,7 @@ Parameters:
             },
             "density": {
                 "type": "object",
-                "description": "Dimensionless density ρ̂ = ρ/ρ₀ per region (ρ₀ is the reference density used to compute α). Each key is a region name, value is: number, {expression: str}, or {file: str, skip_header?: int}. For expressions: spherical geometries use r=spherical radius; other geometries use r=cylindrical radius, R=spherical.",
+                "description": "Dimensionless density ρ̂ = ρ/ρ₀ per region. Value is: number, {expression: str}, or {file: str, format?: 'tabulated'|'grid', columns?: int[], bounds?: number[], skip_header?: int, npz_key?: str}. For tabulated: columns selects columns (1-based). For grid: bounds maps grid to spatial coordinates. For expressions: spherical geometries use r=spherical radius.",
                 "additionalProperties": True
             },
             "n": {
@@ -365,6 +365,29 @@ async def handle(arguments: dict) -> list[TextContent]:
             with d.HDF5File(solver.mesh.mpi_comm(), os.path.join(solution_path, "field_grad_mag.h5"), "w") as f:
                 f.write(solver.field_grad_mag, "field_grad_mag")
 
+        # Project and save density field
+        density_saved = False
+        density_min = None
+        density_max = None
+        try:
+            # Create DG0 space for piecewise constant density (matches region-based definition)
+            V_dg = d.FunctionSpace(solver.mesh, "DG", 0)
+            density_func = d.Function(V_dg)
+
+            # Interpolate density_profile (UserExpression) onto DG0 space
+            density_func.interpolate(density_profile)
+
+            # Get density statistics
+            density_min = float(density_func.vector().min())
+            density_max = float(density_func.vector().max())
+
+            # Save to HDF5
+            with d.HDF5File(solver.mesh.mpi_comm(), os.path.join(solution_path, "density.h5"), "w") as f:
+                f.write(density_func, "density")
+            density_saved = True
+        except Exception:
+            pass  # Density interpolation can fail in some edge cases
+
         # Store solution info
         solution_info = SolutionInfo(
             solution_id=solution_id,
@@ -390,8 +413,9 @@ async def handle(arguments: dict) -> list[TextContent]:
             "alpha": alpha,
             "n": n,
             "density_stats": {
-                "rho_min": density_stats["rho_min"] if density_stats["rho_min"] != float("inf") else None,
-                "rho_max": density_stats["rho_max"] if density_stats["rho_max"] != float("-inf") else None
+                "saved": density_saved,
+                "rho_min": density_min if density_saved else (density_stats["rho_min"] if density_stats["rho_min"] != float("inf") else None),
+                "rho_max": density_max if density_saved else (density_stats["rho_max"] if density_stats["rho_max"] != float("-inf") else None)
             },
             "status": "converged" if converged else "max_iterations",
             "iterations": iterations,
@@ -415,6 +439,7 @@ async def handle(arguments: dict) -> list[TextContent]:
                 "field": "field.h5",
                 "field_grad": "field_grad.h5" if grad_computed else None,
                 "field_grad_mag": "field_grad_mag.h5" if grad_computed else None,
+                "density": "density.h5" if density_saved else None,
             },
             "solution_path": solution_path,
             "runtime_seconds": round(runtime, 2)

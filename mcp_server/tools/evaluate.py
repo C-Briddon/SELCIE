@@ -199,6 +199,20 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
         with d.HDF5File(mesh.mpi_comm(), field_file, "r") as f:
             f.read(field, "field")
 
+        # Load density if available and needed
+        density = None
+        density_file = os.path.join(solution_path, "density.h5")
+        needs_density = any(q in quantities for q in ["density", "adiabatic_field", "field_deviation"])
+        if needs_density and os.path.exists(density_file):
+            try:
+                # Density is stored in DG0 space
+                V_dg = d.FunctionSpace(mesh, "DG", 0)
+                density = d.Function(V_dg)
+                with d.HDF5File(mesh.mpi_comm(), density_file, "r") as f:
+                    f.read(density, "density")
+            except Exception:
+                density = None
+
         # Compute gradient directly from field (more accurate than loading pre-computed)
         field_grad = None
         if "gradient_magnitude" in quantities or "fifth_force_g" in quantities:
@@ -309,11 +323,62 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
                 data["fifth_force_g"] = grad_values.tolist()
                 data["fifth_force_g_note"] = "Currently returns |∇φ| in dimensionless units. Multiply by (M_pl/β) × (Λ/L) × (1/g) for physical units."
 
-        # Adiabatic field comparison (would need density info)
+        # Evaluate density at points
+        if "density" in quantities:
+            if density is not None:
+                density_values = np.zeros(n_points)
+                for i, pt in enumerate(points):
+                    try:
+                        density_values[i] = density(pt[0], pt[1])
+                    except RuntimeError:
+                        density_values[i] = np.nan
+                data["density"] = density_values.tolist()
+            else:
+                data["density_note"] = "Density not saved with this solution (re-solve to generate)"
+
+        # Adiabatic field: phi_adiabatic = rho^{-1/(n+1)}
         if "adiabatic_field" in quantities:
-            # phi_adiabatic = rho^{-1/(n+1)}
-            # We don't have density stored, so skip for now
-            data["adiabatic_field_note"] = "Adiabatic comparison requires density profile (not yet implemented)"
+            if density is not None:
+                n_power = solution_info.n
+                density_values = np.zeros(n_points)
+                adiabatic_values = np.zeros(n_points)
+                for i, pt in enumerate(points):
+                    try:
+                        rho = density(pt[0], pt[1])
+                        density_values[i] = rho
+                        # Avoid division by zero
+                        if rho > 0:
+                            adiabatic_values[i] = pow(rho, -1.0 / (n_power + 1))
+                        else:
+                            adiabatic_values[i] = np.nan
+                    except RuntimeError:
+                        adiabatic_values[i] = np.nan
+                data["adiabatic_field"] = adiabatic_values.tolist()
+            else:
+                data["adiabatic_field_note"] = "Density not saved with this solution (re-solve to generate)"
+
+        # Field deviation from adiabatic: (phi - phi_adiabatic) / phi_adiabatic
+        if "field_deviation" in quantities:
+            if density is not None:
+                n_power = solution_info.n
+                deviation_values = np.zeros(n_points)
+                for i, pt in enumerate(points):
+                    try:
+                        phi = field(pt[0], pt[1])
+                        rho = density(pt[0], pt[1])
+                        if rho > 0:
+                            phi_adiabatic = pow(rho, -1.0 / (n_power + 1))
+                            if phi_adiabatic > 0:
+                                deviation_values[i] = (phi - phi_adiabatic) / phi_adiabatic
+                            else:
+                                deviation_values[i] = np.nan
+                        else:
+                            deviation_values[i] = np.nan
+                    except RuntimeError:
+                        deviation_values[i] = np.nan
+                data["field_deviation"] = deviation_values.tolist()
+            else:
+                data["field_deviation_note"] = "Density not saved with this solution (re-solve to generate)"
 
         # Build response
         result = {

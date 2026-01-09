@@ -568,6 +568,98 @@ class TestUnsupportedFormat:
             Path(temp_path).unlink()
 
 
+class TestColumnSelection:
+    """Tests for column selection from multi-column files."""
+
+    def test_select_columns_from_multicolumn_file(self):
+        """Test extracting specific columns from a multi-column file."""
+        file_path = TEST_DATA_DIR / "multicolumn_profile.dat"
+        # Columns: 1=mass, 2=radius, 3=temp, 4=density, 5=pressure
+        # Select columns 2 (radius) and 4 (density)
+        func = create_density_function(
+            {"file": str(file_path), "columns": [2, 4], "skip_header": 2},
+            symmetry="axial",
+            dimension=2,
+            geometry="sphere_in_vacuum"
+        )
+
+        # At r=0: density should be 150.0
+        result = func([0.0, 0.0])
+        assert result == pytest.approx(150.0, rel=0.01)
+
+        # At r=0.6: density should be 1.0
+        result = func([0.6, 0.0])
+        assert result == pytest.approx(1.0, rel=0.01)
+
+    def test_column_selection_interpolation(self):
+        """Test that interpolation works correctly with selected columns."""
+        file_path = TEST_DATA_DIR / "multicolumn_profile.dat"
+        func = create_density_function(
+            {"file": str(file_path), "columns": [2, 4], "skip_header": 2},
+            symmetry="axial",
+            dimension=2,
+            geometry="sphere_in_vacuum"
+        )
+
+        # Interpolate between r=0.2 (density=50) and r=0.4 (density=10)
+        result = func([0.3, 0.0])
+        assert 10 < result < 50
+
+    def test_column_selection_different_columns(self):
+        """Test selecting different column pairs."""
+        file_path = TEST_DATA_DIR / "multicolumn_profile.dat"
+
+        # Select columns 2 (radius) and 3 (temperature)
+        func = create_density_function(
+            {"file": str(file_path), "columns": [2, 3], "skip_header": 2},
+            symmetry="axial",
+            dimension=2,
+            geometry="sphere_in_vacuum"
+        )
+
+        # At r=0: temp should be 1.5e7
+        result = func([0.0, 0.0])
+        assert result == pytest.approx(1.5e7, rel=0.01)
+
+    def test_column_out_of_range_error(self):
+        """Test error when column index is out of range."""
+        file_path = TEST_DATA_DIR / "multicolumn_profile.dat"
+        with pytest.raises(ValueError, match="out of range"):
+            create_density_function(
+                {"file": str(file_path), "columns": [2, 10], "skip_header": 2},
+                symmetry="axial",
+                dimension=2,
+                geometry="sphere_in_vacuum"
+            )
+
+    def test_column_too_few_columns_error(self):
+        """Test error when fewer than 2 columns specified."""
+        file_path = TEST_DATA_DIR / "multicolumn_profile.dat"
+        with pytest.raises(ValueError, match="at least 2 columns"):
+            create_density_function(
+                {"file": str(file_path), "columns": [2], "skip_header": 2},
+                symmetry="axial",
+                dimension=2,
+                geometry="sphere_in_vacuum"
+            )
+
+    def test_column_selection_3_columns_for_2d(self):
+        """Test selecting 3 columns for 2D axisymmetric data."""
+        file_path = TEST_DATA_DIR / "multicolumn_profile.dat"
+        # Select columns 1 (mass as r), 2 (radius as z), 4 (density)
+        # This creates a 2D (r, z, rho) profile
+        func = create_density_function(
+            {"file": str(file_path), "columns": [1, 2, 4], "skip_header": 2},
+            symmetry="axial",
+            dimension=2,
+            geometry="ellipse_in_vacuum"
+        )
+
+        # Test at a point - should work with 2D interpolation
+        result = func([0.0, 0.0])
+        assert result == pytest.approx(150.0, rel=0.1)
+
+
 class TestFormatConsistency:
     """Tests ensuring all formats produce consistent results."""
 
@@ -620,6 +712,131 @@ class TestFormatConsistency:
             assert result_npy == pytest.approx(result_txt, rel=0.01), f"NPY mismatch at {point}"
             assert result_npz == pytest.approx(result_txt, rel=0.01), f"NPZ mismatch at {point}"
             assert result_dat == pytest.approx(result_txt, rel=0.01), f"DAT mismatch at {point}"
+
+
+class TestGridFormat:
+    """Tests for regular grid format."""
+
+    def test_load_2d_grid(self):
+        """Test loading a 2D grid with default bounds."""
+        file_path = TEST_DATA_DIR / "grid_2d_linear.npy"
+        func = create_density_function(
+            {"file": str(file_path), "format": "grid"},
+            symmetry="none",
+            dimension=2,
+            geometry=None
+        )
+
+        # Grid has rho = x * 100, so at x=0.5, rho=50
+        result = func([0.5, 0.5])
+        assert result == pytest.approx(50.0, rel=0.01)
+
+        # At x=0, rho=0
+        result = func([0.0, 0.5])
+        assert result == pytest.approx(0.0, abs=0.1)
+
+        # At x=1, rho=100
+        result = func([1.0, 0.5])
+        assert result == pytest.approx(100.0, rel=0.01)
+
+    def test_2d_grid_with_custom_bounds(self):
+        """Test 2D grid with custom bounds."""
+        file_path = TEST_DATA_DIR / "grid_2d_linear.npy"
+        # Map grid to [0, 10] x [0, 10] instead of [0, 1] x [0, 1]
+        func = create_density_function(
+            {"file": str(file_path), "format": "grid", "bounds": [0, 10, 0, 10]},
+            symmetry="none",
+            dimension=2,
+            geometry=None
+        )
+
+        # At x=5 (middle of 0-10), should get rho=50
+        result = func([5.0, 5.0])
+        assert result == pytest.approx(50.0, rel=0.01)
+
+        # At x=10, should get rho=100
+        result = func([10.0, 5.0])
+        assert result == pytest.approx(100.0, rel=0.01)
+
+    def test_2d_grid_interpolation(self):
+        """Test that grid interpolation works correctly."""
+        file_path = TEST_DATA_DIR / "grid_2d_linear.npy"
+        func = create_density_function(
+            {"file": str(file_path), "format": "grid"},
+            symmetry="none",
+            dimension=2,
+            geometry=None
+        )
+
+        # Interpolate at x=0.25 -> rho should be 25
+        result = func([0.25, 0.5])
+        assert result == pytest.approx(25.0, rel=0.01)
+
+        # Interpolate at x=0.75 -> rho should be 75
+        result = func([0.75, 0.5])
+        assert result == pytest.approx(75.0, rel=0.01)
+
+    def test_2d_grid_gaussian(self):
+        """Test loading Gaussian grid - max at center."""
+        file_path = TEST_DATA_DIR / "grid_2d_gaussian.npy"
+        func = create_density_function(
+            {"file": str(file_path), "format": "grid"},
+            symmetry="none",
+            dimension=2,
+            geometry=None
+        )
+
+        # Max at center (0.5, 0.5)
+        result_center = func([0.5, 0.5])
+        result_corner = func([0.0, 0.0])
+
+        assert result_center > result_corner
+        assert result_center == pytest.approx(100.0, rel=0.01)
+
+    def test_3d_grid(self):
+        """Test loading a 3D grid."""
+        file_path = TEST_DATA_DIR / "grid_3d_linear.npy"
+        func = create_density_function(
+            {"file": str(file_path), "format": "grid"},
+            symmetry="none",
+            dimension=3,
+            geometry=None
+        )
+
+        # Grid has rho = (x + y + z) * 10
+        # At (0, 0, 0): rho = 0
+        result = func([0.0, 0.0, 0.0])
+        assert result == pytest.approx(0.0, abs=0.1)
+
+        # At (1, 1, 1): rho = 30
+        result = func([1.0, 1.0, 1.0])
+        assert result == pytest.approx(30.0, rel=0.01)
+
+        # At (0.5, 0.5, 0.5): rho = 15
+        result = func([0.5, 0.5, 0.5])
+        assert result == pytest.approx(15.0, rel=0.01)
+
+    def test_grid_invalid_bounds_2d(self):
+        """Test error with wrong number of bounds for 2D grid."""
+        file_path = TEST_DATA_DIR / "grid_2d_linear.npy"
+        with pytest.raises(ValueError, match="2D grid requires bounds"):
+            create_density_function(
+                {"file": str(file_path), "format": "grid", "bounds": [0, 1, 0]},
+                symmetry="none",
+                dimension=2,
+                geometry=None
+            )
+
+    def test_grid_invalid_bounds_3d(self):
+        """Test error with wrong number of bounds for 3D grid."""
+        file_path = TEST_DATA_DIR / "grid_3d_linear.npy"
+        with pytest.raises(ValueError, match="3D grid requires bounds"):
+            create_density_function(
+                {"file": str(file_path), "format": "grid", "bounds": [0, 1, 0, 1]},
+                symmetry="none",
+                dimension=3,
+                geometry=None
+            )
 
 
 if __name__ == "__main__":

@@ -224,7 +224,7 @@ TOOL_DEFINITION = Tool(
                     },
                     "density": {
                         "type": "object",
-                        "description": "Dimensionless density ρ̂ = ρ/ρ₀ per region (ρ₀ is the reference density used to compute α). Each key is a region name, value is: number, {expression: str}, or {file: str, skip_header?: int}. For non-numeric values, max density is used to compute λ.",
+                        "description": "Dimensionless density ρ̂ = ρ/ρ₀ per region. Value is: number, {expression: str}, or {file: str, format?: 'tabulated'|'grid', columns?: int[], bounds?: number[], skip_header?: int, npz_key?: str}. For tabulated: columns selects columns (1-based). For grid: bounds maps grid to spatial coordinates. For non-numeric values, max density is used to compute λ.",
                         "additionalProperties": True,
                     },
                     "n": {

@@ -23,7 +23,8 @@ Plot types:
 - force_1d: Radial gradient magnitude |∇φ|(r)
 - force_2d: 2D colormap of gradient magnitude
 - comparison: Compare multiple solutions on same plot
-- density: Show density profile (if available)
+- density or density_1d: Radial density profile ρ̂(r) with optional adiabatic field overlay
+- density_2d: 2D colormap of density
 
 Returns PNG image (base64 or saved to file).
 """,
@@ -39,7 +40,7 @@ Returns PNG image (base64 or saved to file).
             },
             "plot_type": {
                 "type": "string",
-                "enum": ["field_1d", "field_2d", "force_1d", "force_2d", "comparison", "density"],
+                "enum": ["field_1d", "field_2d", "force_1d", "force_2d", "comparison", "density", "density_1d", "density_2d"],
                 "description": "Type of plot to generate"
             },
             "options": {
@@ -75,7 +76,7 @@ Returns PNG image (base64 or saved to file).
 )
 
 
-def _load_solution_data(solution_id: str, session, need_grad: bool = False):
+def _load_solution_data(solution_id: str, session, need_grad: bool = False, need_density: bool = False):
     """Load solution field data from HDF5 files."""
     import dolfin as d
 
@@ -128,10 +129,24 @@ def _load_solution_data(solution_id: str, session, need_grad: bool = False):
             except Exception:
                 field_grad = None
 
+    # Load density if needed
+    density = None
+    if need_density:
+        density_file = os.path.join(solution_path, "density.h5")
+        if os.path.exists(density_file):
+            try:
+                V_dg = d.FunctionSpace(mesh, "DG", 0)
+                density = d.Function(V_dg)
+                with d.HDF5File(mesh.mpi_comm(), density_file, "r") as f:
+                    f.read(density, "density")
+            except Exception:
+                density = None
+
     return {
         "mesh": mesh,
         "field": field,
         "field_grad": field_grad,
+        "density": density,
         "solution_info": solution_info,
         "mesh_info": mesh_info,
     }, None
@@ -377,6 +392,120 @@ def _plot_comparison(solutions_data, options, ax):
     ax.legend()
 
 
+def _evaluate_radial_density(density, mesh, n_points=200, r_min=None, r_max=None, log_spacing=False):
+    """Evaluate density along radial direction."""
+    coords = mesh.coordinates()
+    if r_min is None:
+        r_min = 0.01
+    if r_max is None:
+        r_max = float(coords[:, 0].max()) * 0.95
+
+    if log_spacing and r_min > 0:
+        r_values = np.logspace(np.log10(r_min), np.log10(r_max), n_points)
+    else:
+        r_values = np.linspace(r_min, r_max, n_points)
+
+    density_values = []
+    valid_r = []
+    for r in r_values:
+        try:
+            val = density(r, 0.0)
+            density_values.append(val)
+            valid_r.append(r)
+        except RuntimeError:
+            pass  # Point outside mesh
+
+    return np.array(valid_r), np.array(density_values)
+
+
+def _plot_density_1d(data, options, ax):
+    """Create 1D density profile plot."""
+    if data["density"] is None:
+        ax.text(0.5, 0.5, "Density not saved with this solution\n(re-solve to generate)",
+                ha='center', va='center', transform=ax.transAxes)
+        return
+
+    n_points = options.get("n_points", 200)
+    r_min = options.get("r_min")
+    r_max = options.get("r_max")
+    log_r = options.get("log_r", False)
+    log_scale = options.get("log_scale", True)  # Default to log for density
+    show_adiabatic = options.get("show_adiabatic", True)
+
+    r, rho = _evaluate_radial_density(
+        data["density"], data["mesh"],
+        n_points=n_points, r_min=r_min, r_max=r_max, log_spacing=log_r
+    )
+
+    ax.plot(r, rho, 'b-', linewidth=2, label='ρ̂(r)')
+
+    # Optionally overlay adiabatic field for comparison
+    if show_adiabatic:
+        n_power = data['solution_info'].n
+        phi_adiabatic = np.where(rho > 0, np.power(rho, -1.0 / (n_power + 1)), np.nan)
+        ax2 = ax.twinx()
+        ax2.plot(r, phi_adiabatic, 'g--', linewidth=1.5, alpha=0.7, label='φ_adiabatic')
+        ax2.set_ylabel('φ_adiabatic = ρ̂^{-1/(n+1)}', fontsize=10, color='green')
+        ax2.tick_params(axis='y', labelcolor='green')
+
+    if log_r:
+        ax.set_xscale('log')
+    if log_scale and np.all(rho > 0):
+        ax.set_yscale('log')
+
+    ax.set_xlabel('r', fontsize=11)
+    ax.set_ylabel('ρ̂', fontsize=11)
+    ax.set_title(f"Density profile (α={data['solution_info'].alpha})", fontsize=12)
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='upper left')
+
+
+def _plot_density_2d(data, options, ax):
+    """Create 2D density colormap."""
+    import matplotlib.tri as mtri
+
+    if data["density"] is None:
+        ax.text(0.5, 0.5, "Density not saved with this solution\n(re-solve to generate)",
+                ha='center', va='center', transform=ax.transAxes)
+        return
+
+    mesh = data["mesh"]
+    density = data["density"]
+    colormap = options.get("colormap", "YlOrRd")
+    log_scale = options.get("log_scale", True)
+
+    coords = mesh.coordinates()
+    x = coords[:, 0]
+    y = coords[:, 1]
+
+    # Get density values at vertices (DG0 is cell-centered, need to evaluate at vertices)
+    density_vals = np.zeros(len(coords))
+    for i, (xi, yi) in enumerate(coords):
+        try:
+            density_vals[i] = density(xi, yi)
+        except RuntimeError:
+            density_vals[i] = np.nan
+
+    if log_scale and np.all(density_vals[~np.isnan(density_vals)] > 0):
+        density_vals = np.log10(np.where(density_vals > 0, density_vals, np.nan))
+        cbar_label = 'log₁₀(ρ̂)'
+    else:
+        cbar_label = 'ρ̂'
+
+    # Create triangulation
+    cells = mesh.cells()
+    triang = mtri.Triangulation(x, y, cells)
+
+    # Plot
+    tpc = ax.tripcolor(triang, density_vals, cmap=colormap, shading='gouraud')
+    cbar = ax.figure.colorbar(tpc, ax=ax, label=cbar_label)
+
+    ax.set_xlabel('r', fontsize=11)
+    ax.set_ylabel('z', fontsize=11)
+    ax.set_title(f"Density (α={data['solution_info'].alpha})", fontsize=12)
+    ax.set_aspect('equal')
+
+
 async def handle(arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
     """Handle plot tool calls."""
     import matplotlib
@@ -398,14 +527,15 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
         else:
             solution_ids = solution_id
 
-        # Determine if we need gradient data
+        # Determine if we need gradient or density data
         need_grad = plot_type in ("force_1d", "force_2d") or \
                     (plot_type == "comparison" and options.get("quantity") == "gradient_magnitude")
+        need_density = plot_type in ("density", "density_1d", "density_2d")
 
         # Load solution data
         solutions_data = []
         for sid in solution_ids:
-            data, error = _load_solution_data(sid, session, need_grad=need_grad)
+            data, error = _load_solution_data(sid, session, need_grad=need_grad, need_density=need_density)
             if error:
                 return [TextContent(type="text", text=json.dumps({
                     "error": {
@@ -438,9 +568,10 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
                     }
                 }, indent=2))]
             _plot_comparison(solutions_data, options, ax)
-        elif plot_type == "density":
-            ax.text(0.5, 0.5, "Density plot not yet implemented\n(density not stored with solution)",
-                    ha='center', va='center', transform=ax.transAxes)
+        elif plot_type == "density" or plot_type == "density_1d":
+            _plot_density_1d(solutions_data[0], options, ax)
+        elif plot_type == "density_2d":
+            _plot_density_2d(solutions_data[0], options, ax)
         else:
             return [TextContent(type="text", text=json.dumps({
                 "error": {

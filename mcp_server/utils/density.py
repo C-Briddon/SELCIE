@@ -38,7 +38,12 @@ SPHERICAL_GEOMETRIES = {
 SUPPORTED_EXTENSIONS = {".txt", ".dat", ".csv", ".npy", ".npz"}
 
 
-def _load_density_file(file_path: str, skip_header: int = 0, npz_key: str = "data") -> np.ndarray:
+def _load_density_file(
+    file_path: str,
+    skip_header: int = 0,
+    npz_key: str = "data",
+    columns: list[int] | None = None
+) -> np.ndarray:
     """
     Load density profile data from various file formats.
 
@@ -52,6 +57,9 @@ def _load_density_file(file_path: str, skip_header: int = 0, npz_key: str = "dat
         file_path: Path to the data file
         skip_header: Number of header rows to skip (text formats only)
         npz_key: Key to use for .npz files (default: "data")
+        columns: List of column indices to extract (1-based, like awk).
+                 E.g., [2, 4] extracts columns 2 and 4.
+                 If None, uses all columns.
 
     Returns:
         2D numpy array with shape (n_points, n_columns)
@@ -96,6 +104,29 @@ def _load_density_file(file_path: str, skip_header: int = 0, npz_key: str = "dat
             f"Unsupported file format '{ext}'. "
             f"Supported formats: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
         )
+
+    # Extract specified columns (1-based indexing like awk)
+    if columns is not None:
+        if len(columns) < 2:
+            raise ValueError(
+                f"'columns' must specify at least 2 columns (position and density). "
+                f"Got: {columns}"
+            )
+        # Ensure data is 2D for column indexing
+        if data.ndim == 1:
+            raise ValueError(
+                f"File has only 1 column but 'columns' parameter requires multiple columns."
+            )
+        # Convert to 0-based indexing and validate
+        col_indices = []
+        n_cols = data.shape[1]
+        for col in columns:
+            if col < 1 or col > n_cols:
+                raise ValueError(
+                    f"Column {col} out of range. File has {n_cols} columns (1-{n_cols})."
+                )
+            col_indices.append(col - 1)  # Convert to 0-based
+        data = data[:, col_indices]
 
     return data
 
@@ -254,16 +285,86 @@ def create_density_function(
 
         return expr_func
 
-    # File-based (tabulated) density
+    # File-based density (grid or tabulated)
     if isinstance(spec, dict) and "file" in spec:
         file_path = spec["file"]
         skip_header = spec.get("skip_header", 0)
         npz_key = spec.get("npz_key", "data")  # Key for .npz files
+        columns = spec.get("columns", None)  # Column indices (1-based)
+        file_format = spec.get("format", "tabulated")  # "tabulated" or "grid"
+        bounds = spec.get("bounds", None)  # For grid format: [x_min, x_max, y_min, y_max, ...]
 
-        # Load data based on file extension
-        data = _load_density_file(file_path, skip_header, npz_key)
+        # Handle grid format (regular grid data like images/simulation output)
+        if file_format == "grid":
+            data = _load_density_file(file_path, skip_header, npz_key, columns=None)
 
-        # Ensure 2D array
+            if data.ndim == 1:
+                raise ValueError(
+                    f"Grid format requires 2D or 3D array, got 1D with shape {data.shape}"
+                )
+
+            if data.ndim == 2:
+                # 2D grid: (x, y) for Cartesian, (r, z) for axisymmetric
+                ny, nx = data.shape
+                if bounds is None:
+                    bounds = [0.0, 1.0, 0.0, 1.0]  # Default: unit square
+                if len(bounds) != 4:
+                    coord_names = "(r_min, r_max, z_min, z_max)" if symmetry == "axial" else "(x_min, x_max, y_min, y_max)"
+                    raise ValueError(
+                        f"2D grid requires bounds {coord_names}, got {len(bounds)} values"
+                    )
+                c1_min, c1_max, c2_min, c2_max = bounds
+                c1_coords = np.linspace(c1_min, c1_max, nx)  # x or r
+                c2_coords = np.linspace(c2_min, c2_max, ny)  # y or z
+
+                from scipy.interpolate import RegularGridInterpolator
+                # Note: RegularGridInterpolator expects (row, col) = (c2, c1) order
+                interp = RegularGridInterpolator(
+                    (c2_coords, c1_coords), data,
+                    method='linear', bounds_error=False, fill_value=None
+                )
+
+                def grid_func(x):
+                    # x is [r, z] for axial or [x, y] for Cartesian
+                    return float(interp((x[1], x[0])))
+
+                return grid_func
+
+            elif data.ndim == 3:
+                # 3D grid
+                nz, ny, nx = data.shape
+                if bounds is None:
+                    bounds = [0.0, 1.0, 0.0, 1.0, 0.0, 1.0]  # Default: unit cube
+                if len(bounds) != 6:
+                    raise ValueError(
+                        f"3D grid requires bounds [x_min, x_max, y_min, y_max, z_min, z_max], got {len(bounds)} values"
+                    )
+                x_min, x_max, y_min, y_max, z_min, z_max = bounds
+                x_coords = np.linspace(x_min, x_max, nx)
+                y_coords = np.linspace(y_min, y_max, ny)
+                z_coords = np.linspace(z_min, z_max, nz)
+
+                from scipy.interpolate import RegularGridInterpolator
+                interp = RegularGridInterpolator(
+                    (z_coords, y_coords, x_coords), data,
+                    method='linear', bounds_error=False, fill_value=None
+                )
+
+                def grid_func(x):
+                    # x is [x, y, z] from FEniCS
+                    return float(interp((x[2], x[1], x[0])))
+
+                return grid_func
+
+            else:
+                raise ValueError(
+                    f"Grid format supports 2D or 3D arrays, got {data.ndim}D"
+                )
+
+        # Load data for tabulated format
+        data = _load_density_file(file_path, skip_header, npz_key, columns)
+
+        # Ensure 2D array for tabulated format
         if data.ndim == 1:
             raise ValueError(
                 f"File '{file_path}' contains only 1D data. "
