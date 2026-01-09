@@ -724,16 +724,20 @@ def _create_custom_2d(
     MT: MeshingTools,
     params: dict,
     quality: dict,
+    symmetry: str = "axial",
 ) -> tuple[list[str], dict]:
     """Create custom 2D geometry from file or points.
 
     Supports:
     - shape_file: Path to text file with x,y coordinates per line
-    - points: Direct list of [x, y] coordinates
+    - points: Direct list of [x, y] coordinates (or [r, z] for axisymmetric)
+
+    For axisymmetric (symmetry="axial"), points with x < 0 are discarded.
     """
     import numpy as np
 
     vacuum_radius = params.get("vacuum_radius", 1.0)
+    is_axisymmetric = symmetry == "axial"
 
     # Load points from file or use direct points
     if "shape_file" in params:
@@ -742,6 +746,14 @@ def _create_custom_2d(
         points_2d = np.array(params["points"])
     else:
         raise ValueError("Must provide either 'shape_file' or 'points'")
+
+    # For axisymmetric, filter out r < 0 points (r = 0 on axis is valid)
+    if is_axisymmetric:
+        mask = points_2d[:, 0] >= 0  # Keep r >= 0, exclude r < 0
+        n_removed = np.sum(~mask)
+        if n_removed > 0:
+            print(f"Warning: Removed {n_removed} points with r < 0 for axisymmetric mesh")
+        points_2d = points_2d[mask]
 
     # Convert to 3D coordinates (z=0) for SELCIE
     if points_2d.shape[1] == 2:
@@ -763,14 +775,16 @@ def _create_custom_2d(
     if vacuum_radius:
         bg_cell_min = quality["cell_min_factor"] * vacuum_radius
         bg_cell_max = quality["cell_max_factor"] * vacuum_radius
-        MT.create_background_mesh(
-            CellSizeMin=bg_cell_min,
-            CellSizeMax=bg_cell_max,
-            DistMax=dist_max,
-            background_radius=vacuum_radius,
-            wall_thickness=0.1 * vacuum_radius,
-            symmetry="vertical",  # Axisymmetric
-        )
+        bg_kwargs = {
+            "CellSizeMin": bg_cell_min,
+            "CellSizeMax": bg_cell_max,
+            "DistMax": dist_max,
+            "background_radius": vacuum_radius,
+            "wall_thickness": 0.1 * vacuum_radius,
+        }
+        if is_axisymmetric:
+            bg_kwargs["symmetry"] = "vertical"
+        MT.create_background_mesh(**bg_kwargs)
 
     # Calculate actual bounds from points
     x_coords = points_2d[:, 0]
@@ -1041,7 +1055,7 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
         elif geometry == "box_3d":
             regions, bounds = _create_box_3d(MT, params, quality)
         elif geometry == "custom_2d":
-            regions, bounds = _create_custom_2d(MT, params, quality)
+            regions, bounds = _create_custom_2d(MT, params, quality, symmetry)
         elif geometry == "custom_3d":
             regions, bounds = _create_custom_3d(MT, params, quality)
         else:

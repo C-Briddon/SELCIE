@@ -226,19 +226,19 @@ async def main():
             "geometry": "sphere_in_vacuum",
             "name": "sphere_thin_shell",
             "params": {"object_radius": 0.15, "vacuum_radius": 1.0},
-            "physics_params": {"lambda_subdomain": 0.01},
+            "physics_params": {"lambda": {"object": 0.01}},
         },
         {
             "geometry": "sphere_in_vacuum",
             "name": "sphere_very_thin_shell",
             "params": {"object_radius": 0.15, "vacuum_radius": 1.0},
-            "physics_params": {"lambda_subdomain": 0.002},
+            "physics_params": {"lambda": {"object": 0.002}},
         },
         {
             "geometry": "two_spheres",
             "name": "two_spheres_thin_shell",
             "params": {"radius_1": 0.12, "radius_2": 0.08, "separation": 0.5, "vacuum_radius": 1.0},
-            "physics_params": {"lambda_subdomain": 0.005},
+            "physics_params": {"lambda": {"sphere_1": 0.005, "sphere_2": 0.005}},
         },
         {
             "geometry": "custom_2d",
@@ -252,7 +252,34 @@ async def main():
                 ],
                 "vacuum_radius": 1.0,
             },
-            "physics_params": {"lambda_subdomain": 0.01},
+            "physics_params": {"lambda": {"object": 0.01}},
+        },
+        # Test cases for symmetry handling
+        {
+            "geometry": "custom_2d",
+            "name": "custom_2d_axial_filtered",
+            "params": {
+                # Full star with x < 0 points - these get filtered in axial mode
+                "points": [
+                    [0.25, 0.0], [0.077, 0.154], [-0.077, 0.154],
+                    [-0.25, 0.0], [-0.077, -0.154], [0.077, -0.154],
+                ],
+                "vacuum_radius": 1.0,
+            },
+            # Default symmetry="axial" - x < 0 points will be filtered
+        },
+        {
+            "geometry": "custom_2d",
+            "name": "custom_2d_no_symmetry",
+            "symmetry": "none",
+            "params": {
+                # Full hexagon - all points kept in 2D no-symmetry mode
+                "points": [
+                    [0.2, 0.0], [0.1, 0.173], [-0.1, 0.173],
+                    [-0.2, 0.0], [-0.1, -0.173], [0.1, -0.173],
+                ],
+                "vacuum_radius": 1.0,
+            },
         },
     ]
 
