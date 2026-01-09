@@ -1,0 +1,32 @@
+#!/bin/bash
+# Pre-commit hook to auto-generate MCP tool documentation
+#
+# To install: run from SELCIE repo root:
+#   ln -sf ../../mcp_server/.githooks/pre-commit .git/hooks/pre-commit
+#
+# Or run: mcp_server/scripts/setup_hooks.sh
+
+# Find the repo root
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+MCP_SERVER_DIR="$REPO_ROOT/mcp_server"
+
+# Check if any tool files were modified
+TOOLS_CHANGED=$(git diff --cached --name-only | grep -E "mcp_server/tools/.*\.py$" || true)
+
+if [ -n "$TOOLS_CHANGED" ]; then
+    echo "MCP tool files changed, regenerating documentation..."
+
+    # Run the doc generator
+    cd "$MCP_SERVER_DIR"
+    python scripts/generate_docs.py 2>/dev/null
+
+    if [ $? -eq 0 ]; then
+        # Add the updated docs to the commit
+        git add docs/TOOLS.md
+        echo "TOOLS.md documentation updated and staged."
+    else
+        echo "Warning: Failed to regenerate documentation"
+    fi
+fi
+
+exit 0

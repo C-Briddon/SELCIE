@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-01-09 15:20_
+_Generated: 2026-01-09 19:28_
 
 ---
 
@@ -21,7 +21,7 @@ _Generated: 2026-01-09 15:20_
 
 ## calculate_physical_parameters
 
-Convert physical chameleon parameters to SELCIE's dimensionless α and assess the screening regime using the Compton wavelength criterion. Use this first to determine if SELCIE is needed or if analytic solutions suffice. Returns the dimensionless Compton wavelength λ̂(ρ̂) = √(α/(n+1)) × ρ̂^{-(n+2)/(2(n+1))} at the density extremes, which determines field behavior: λ̂ << 1 means adiabatic (field tracks ρ̂^{-1/(n+1)}), λ̂ >> 1 means field is constant, λ̂ ~ 1 is the transition region where SELCIE is needed.
+Convert physical chameleon parameters to SELCIE's dimensionless α and assess the screening regime using the Compton wavelength criterion. Use this first to determine if SELCIE is needed or if analytic solutions suffice. Returns the dimensionless Compton wavelength λ̂(ρ̂) = √(α/(n+1)) × ρ̂^{-(n+2)/(2(n+1))} at the density extremes, which determines field behavior: λ̂ << 1 means adiabatic (field tracks ρ̂^{-1/(n+1)}), λ̂ >> 1 means field is constant, λ̂ ~ 1 is the transition region where SELCIE is needed. Also returns a conversion factor to translate dimensionless grad(φ) from the solver to physical fifth force in units of g.
 
 ### Parameters
 
