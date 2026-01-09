@@ -46,7 +46,7 @@
 
 ### Custom shapes
 
-> Create a hexagonal mesh with vertices at (0.2,0), (0.1,0.173), (-0.1,0.173), (-0.2,0), (-0.1,-0.173), (0.1,-0.173) in vacuum of radius 1.0
+> Create a 2D hexagonal mesh with vertices at (0.2,0), (0.1,0.173), (-0.1,0.173), (-0.2,0), (-0.1,-0.173), (0.1,-0.173) in vacuum of radius 1.0
 
 > Create a custom star shape from the points file test_data/star.txt in vacuum
 

@@ -11,7 +11,7 @@ from typing import Any
 
 from mcp.types import Tool, TextContent
 
-from SELCIE.Misc import alpha_calculator_chameleon
+from SELCIE.Misc import alpha_calculator_chameleon, conv_fifth_force_chameleon
 
 from utils.physics import M_PL_EV, calculate_lambda_hat, classify_regime
 from utils.units import get_astropy_density_unit, get_astropy_length_unit
@@ -26,7 +26,8 @@ TOOL_DEFINITION = Tool(
         "dimensionless Compton wavelength λ̂(ρ̂) = √(α/(n+1)) × ρ̂^{-(n+2)/(2(n+1))} at "
         "the density extremes, which determines field behavior: λ̂ << 1 means adiabatic "
         "(field tracks ρ̂^{-1/(n+1)}), λ̂ >> 1 means field is constant, λ̂ ~ 1 is the "
-        "transition region where SELCIE is needed."
+        "transition region where SELCIE is needed. Also returns a conversion factor to "
+        "translate dimensionless grad(φ) from the solver to physical fifth force in units of g."
     ),
     inputSchema={
         "type": "object",
@@ -146,9 +147,17 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
             n=n, M=M_eV, Lam=Lambda_eV, p0=rho_0, L=L,
             L_NonEVUnits=L_unit
         )
+        force_conversion = conv_fifth_force_chameleon(
+            n=n, M=M_eV, Lam=Lambda_eV, p0=rho_0, L=L,
+            L_NonEVUnits=L_unit
+        )
     elif rho_0_units == "GeV^4":
         rho_0_eV4 = rho_0 * 1e36
         alpha = alpha_calculator_chameleon(
+            n=n, M=M_eV, Lam=Lambda_eV, p0=rho_0_eV4, L=L,
+            L_NonEVUnits=L_unit
+        )
+        force_conversion = conv_fifth_force_chameleon(
             n=n, M=M_eV, Lam=Lambda_eV, p0=rho_0_eV4, L=L,
             L_NonEVUnits=L_unit
         )
@@ -157,11 +166,17 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
             n=n, M=M_eV, Lam=Lambda_eV, p0=rho_0, L=L,
             p0_NonEVUnits=rho_unit, L_NonEVUnits=L_unit
         )
+        force_conversion = conv_fifth_force_chameleon(
+            n=n, M=M_eV, Lam=Lambda_eV, p0=rho_0, L=L,
+            p0_NonEVUnits=rho_unit, L_NonEVUnits=L_unit
+        )
 
     # Build result
     result: dict[str, Any] = {
         "alpha": alpha,
         "n": n,
+        "force_conversion_to_g": force_conversion,
+        "force_conversion_note": "Multiply dimensionless grad(phi) by this to get fifth force in units of g (9.80665 m/s^2)",
     }
 
     # If rho_max/rho_min not provided, return formulas
