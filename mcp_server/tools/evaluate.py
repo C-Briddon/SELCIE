@@ -24,8 +24,8 @@ Modes:
 
 Quantities:
 - field: Chameleon field φ
-- gradient_magnitude: |∇φ|
-- fifth_force_g: Fifth force in units of g (requires beta parameter)
+- gradient_magnitude: |∇φ| (dimensionless). Multiply by force_conversion_to_g from calculate_physical_parameters to get fifth force acceleration in units of g.
+- fifth_force_g: Alias for gradient_magnitude (returns gradient_magnitude)
 - density: ρ̂ at evaluation points (if available)
 - adiabatic_field: ρ̂^{-1/(n+1)} for comparison
 - field_deviation: (φ - φ_adiabatic) / φ_adiabatic
@@ -142,6 +142,12 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
         params = arguments.get("params", {})
         quantities = arguments.get("quantities", ["field", "gradient_magnitude"])
 
+        # Normalize: fifth_force_g is an alias for gradient_magnitude
+        if "fifth_force_g" in quantities:
+            quantities = [q for q in quantities if q != "fifth_force_g"]
+            if "gradient_magnitude" not in quantities:
+                quantities.append("gradient_magnitude")
+
         # Get session and solution info
         session = get_session()
         solution_info = session.get_solution(solution_id)
@@ -215,7 +221,7 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
 
         # Compute gradient directly from field (more accurate than loading pre-computed)
         field_grad = None
-        if "gradient_magnitude" in quantities or "fifth_force_g" in quantities:
+        if "gradient_magnitude" in quantities:
             # Project grad(field) onto vector space with same degree
             V_vec = d.VectorFunctionSpace(mesh, "CG", deg_V)
             field_grad = d.project(d.grad(field), V_vec)
@@ -303,7 +309,7 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
             data["field"] = field_values.tolist()
 
         # Evaluate gradient magnitude (compute on-the-fly from gradient vector)
-        if ("gradient_magnitude" in quantities or "fifth_force_g" in quantities) and field_grad is not None:
+        if "gradient_magnitude" in quantities and field_grad is not None:
             grad_values = np.zeros(n_points)
             for i, pt in enumerate(points):
                 try:
@@ -312,16 +318,7 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
                 except RuntimeError:
                     grad_values[i] = np.nan
 
-            if "gradient_magnitude" in quantities:
-                data["gradient_magnitude"] = grad_values.tolist()
-
-            # Fifth force in units of g (needs physical conversion)
-            # For now, just return gradient magnitude as proxy
-            if "fifth_force_g" in quantities:
-                # This would need beta and physical scales to convert properly
-                # For now, note that fifth_force ~ grad_phi / M where M = M_pl / beta
-                data["fifth_force_g"] = grad_values.tolist()
-                data["fifth_force_g_note"] = "Currently returns |∇φ| in dimensionless units. Multiply by (M_pl/β) × (Λ/L) × (1/g) for physical units."
+            data["gradient_magnitude"] = grad_values.tolist()
 
         # Evaluate density at points
         if "density" in quantities:
@@ -427,6 +424,12 @@ async def _handle_max_in_region(
 
     params = arguments.get("params", {})
     quantities = arguments.get("quantities", ["field", "gradient_magnitude"])
+
+    # Normalize: fifth_force_g is an alias for gradient_magnitude
+    if "fifth_force_g" in quantities:
+        quantities = [q for q in quantities if q != "fifth_force_g"]
+        if "gradient_magnitude" not in quantities:
+            quantities.append("gradient_magnitude")
 
     region = params.get("region", "vacuum")
     min_distance_from = params.get("min_distance_from")
@@ -576,31 +579,18 @@ async def _handle_max_in_region(
         }
 
     # Gradient magnitude (compute on-the-fly from gradient vector)
-    if ("gradient_magnitude" in quantities or "fifth_force_g" in quantities) and field_grad is not None:
+    if "gradient_magnitude" in quantities and field_grad is not None:
         grad_values = np.array([np.linalg.norm(field_grad(pt[0], pt[1])) for pt in sample_points])
 
-        if "gradient_magnitude" in quantities:
-            max_idx = np.argmax(grad_values)
-            min_idx = np.argmin(grad_values)
-            data["gradient_magnitude"] = {
-                "max": float(grad_values[max_idx]),
-                "max_location": sample_points[max_idx].tolist(),
-                "min": float(grad_values[min_idx]),
-                "min_location": sample_points[min_idx].tolist(),
-                "mean": float(np.mean(grad_values))
-            }
-
-        if "fifth_force_g" in quantities:
-            max_idx = np.argmax(grad_values)
-            min_idx = np.argmin(grad_values)
-            data["fifth_force_g"] = {
-                "max": float(grad_values[max_idx]),
-                "max_location": sample_points[max_idx].tolist(),
-                "min": float(grad_values[min_idx]),
-                "min_location": sample_points[min_idx].tolist(),
-                "mean": float(np.mean(grad_values)),
-                "note": "Values in dimensionless units |∇φ|"
-            }
+        max_idx = np.argmax(grad_values)
+        min_idx = np.argmin(grad_values)
+        data["gradient_magnitude"] = {
+            "max": float(grad_values[max_idx]),
+            "max_location": sample_points[max_idx].tolist(),
+            "min": float(grad_values[min_idx]),
+            "min_location": sample_points[min_idx].tolist(),
+            "mean": float(np.mean(grad_values))
+        }
 
     result = {
         "solution_id": arguments["solution_id"],

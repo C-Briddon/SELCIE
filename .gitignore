@@ -3,3 +3,4 @@ __pycache__
 build
 *.egg-info
 *.ipynb_checkpoints
+.DS_Store

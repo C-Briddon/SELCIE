@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-01-09 19:28_
+_Generated: 2026-01-11 23:12_
 
 ---
 
@@ -21,7 +21,7 @@ _Generated: 2026-01-09 19:28_
 
 ## calculate_physical_parameters
 
-Convert physical chameleon parameters to SELCIE's dimensionless α and assess the screening regime using the Compton wavelength criterion. Use this first to determine if SELCIE is needed or if analytic solutions suffice. Returns the dimensionless Compton wavelength λ̂(ρ̂) = √(α/(n+1)) × ρ̂^{-(n+2)/(2(n+1))} at the density extremes, which determines field behavior: λ̂ << 1 means adiabatic (field tracks ρ̂^{-1/(n+1)}), λ̂ >> 1 means field is constant, λ̂ ~ 1 is the transition region where SELCIE is needed. Also returns a conversion factor to translate dimensionless grad(φ) from the solver to physical fifth force in units of g.
+Convert physical chameleon parameters to SELCIE's dimensionless α and assess the screening regime using the Compton wavelength criterion. Use this first to determine if SELCIE is needed or if analytic solutions suffice. Returns the dimensionless Compton wavelength λ̂(ρ̂) = √(α/(n+1)) × ρ̂^{-(n+2)/(2(n+1))} at the density extremes. Since λ̂ is in units of L, compare to 1: λ̂ << 1 means adiabatic (field tracks ρ̂^{-1/(n+1)}), λ̂ >> 1 means field is set by boundaries, λ̂ ~ 1 is the transition region where SELCIE is needed. Also returns a conversion factor to translate dimensionless grad(φ) from the solver to physical fifth force in units of g.
 
 ### Parameters
 
@@ -116,8 +116,8 @@ Modes:
 
 Quantities:
 - field: Chameleon field φ
-- gradient_magnitude: |∇φ|
-- fifth_force_g: Fifth force in units of g (requires beta parameter)
+- gradient_magnitude: |∇φ| (dimensionless). Multiply by force_conversion_to_g from calculate_physical_parameters to get fifth force acceleration in units of g.
+- fifth_force_g: Alias for gradient_magnitude (returns gradient_magnitude)
 - density: ρ̂ at evaluation points (if available)
 - adiabatic_field: ρ̂^{-1/(n+1)} for comparison
 - field_deviation: (φ - φ_adiabatic) / φ_adiabatic
