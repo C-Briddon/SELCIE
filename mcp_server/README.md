@@ -50,20 +50,7 @@ conda env list
 ## Adding to Codex
 
 ```bash
-codex --mcp-config '{"selcie": {"command": "/path/to/conda/envs/SELCIE/bin/python", "args": ["/path/to/SELCIE/mcp_server/server.py"]}}'
-```
-
-Or add to your Codex configuration file:
-
-```json
-{
-  "mcpServers": {
-    "selcie": {
-      "command": "/path/to/conda/envs/SELCIE/bin/python",
-      "args": ["/path/to/SELCIE/mcp_server/server.py"]
-    }
-  }
-}
+codex mcp add selcie -- /path/to/conda/envs/SELCIE/bin/python -u /path/to/SELCIE/mcp_server/server.py
 ```
 
 ## Running the Server Manually

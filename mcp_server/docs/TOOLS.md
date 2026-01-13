@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-01-11 23:12_
+_Generated: 2026-01-13 20:31_
 
 ---
 
@@ -58,13 +58,31 @@ Can clear all objects, just meshes, just solutions, or specific IDs.
 
 Generate a finite element mesh for chameleon field simulations. Uses geometry templates that automatically handle subdomain creation, symmetry, and mesh refinement. Templates include object-in-vacuum (sphere_in_vacuum, ellipse_in_vacuum, etc.), plain domains (box_2d, disk, etc.), and custom shapes from file.
 
-IMPORTANT: For thin-shell problems (high α, high density contrast), provide physics_params with alpha and density_contrast to enable automatic mesh refinement near object boundaries. This ensures the thin shell region is properly resolved.
+IMPORTANT: For thin-shell problems (high α, high density contrast), provide physics_params with alpha and density to enable automatic mesh refinement near object boundaries. This ensures the thin shell region is properly resolved.
 
 ### Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `geometry` | `sphere_in_vacuum` | `ellipse_in_vacuum` | `ellipsoid_in_vacuum` | `cylinder_in_vacuum` | `shell_in_vacuum` | `two_spheres` | `sphere_near_wall` | `box_2d` | `box_3d` | `disk` | `sphere_domain` | `custom_2d` | `custom_3d` | Yes | Geometry template. |
+| `geometry` | `sphere_in_vacuum` | `ellipse_in_vacuum` | `cylinder_in_vacuum` | `shell_in_vacuum` | `two_spheres` | `sphere_near_wall` | `box_2d` | `box_3d` | `disk` | `sphere_domain` | `custom_2d` | `custom_3d` | Yes | Geometry template. Choose based on physical setup:
+
+OBJECT-IN-VACUUM (screening/force calculations):
+- sphere_in_vacuum: Spherical source in vacuum. Regions: object, vacuum. Default symmetry: axial (2D). 'r' = spherical radius.
+- ellipse_in_vacuum: Oblate/prolate ellipsoid in vacuum. Regions: object, vacuum. Default symmetry: axial (2D). 'r' = cylindrical radius.
+- cylinder_in_vacuum: Cylindrical source in vacuum. Regions: cylinder, vacuum. Default symmetry: axial (2D). 'r' = cylindrical radius.
+- shell_in_vacuum: Hollow spherical shell in vacuum. Regions: shell, vacuum. Default symmetry: axial (2D). 'r' = spherical radius.
+- two_spheres: Two spheres for force calculations. Regions: sphere_1, sphere_2, vacuum. Default symmetry: axial (2D). 'r' = cylindrical radius.
+- sphere_near_wall: Sphere near planar wall. Regions: sphere, wall, vacuum. Default symmetry: axial (2D). 'r' = cylindrical radius.
+
+PLAIN DOMAINS (no interior object):
+- sphere_domain: For spherically-symmetric profiles (NFW, isothermal). Regions: domain. Default symmetry: axial (2D). 'r' = spherical radius.
+- disk: For cylindrically-symmetric profiles. Regions: domain. Default symmetry: axial (2D). 'r' = cylindrical radius.
+- box_2d: 2D Cartesian rectangle. Regions: domain. Default symmetry: none (2D Cartesian).
+- box_3d: 3D Cartesian box. Regions: domain. Default symmetry: none (3D).
+
+CUSTOM SHAPES:
+- custom_2d: Arbitrary 2D shape from points. Points are [r, z] for axial symmetry, [x, y] for none. Regions: object, vacuum. Default symmetry: axial (2D). 'r' = cylindrical radius.
+- custom_3d: Arbitrary 3D shape from contours. Regions: object. Default symmetry: none (3D). |
 | `params` | object | Yes | Geometry-specific parameters. |
 | `mesh_quality` | `very_coarse` | `coarse` | `medium` | `fine` | `very_fine` | No | Mesh resolution. Default: `"medium"` |
 | `symmetry` | `axial` | `none` | No | Override default symmetry. |
@@ -92,7 +110,7 @@ IMPORTANT: For thin-shell problems (high α, high density contrast), provide phy
 - **`wall_distance`** (number): Distance from sphere center to wall (sphere_near_wall)
 - **`points`** (array[any]): Array of [r,z] points for custom_2d
 - **`shape_file`** (string): Path to file with shape points (custom_2d)
-- **`contours_file`** (string): Path to 3D contours file (custom_3d)
+- **`contour_file`** (string): Path to 3D contour file (custom_3d)
 
 #### `physics_params` options
 

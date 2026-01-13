@@ -102,10 +102,12 @@ async def create_and_plot_mesh(geometry_config, output_dir):
 
     reset_session()
 
+    # Use coarse for 3D meshes (medium creates too many cells)
+    is_3d = geometry_config["geometry"] in ["box_3d", "custom_3d"]
     args = {
         "geometry": geometry_config["geometry"],
         "params": geometry_config["params"],
-        "mesh_quality": "coarse",
+        "mesh_quality": "coarse" if is_3d else "medium",
     }
     if "symmetry" in geometry_config:
         args["symmetry"] = geometry_config["symmetry"]
@@ -165,9 +167,62 @@ async def main():
             "geometry": "shell_in_vacuum",
             "params": {"inner_radius": 0.1, "outer_radius": 0.2, "vacuum_radius": 1.0},
         },
+        # Shell with larger vacuum radius (tests cell scaling fix)
+        {
+            "geometry": "shell_in_vacuum",
+            "name": "shell_in_vacuum_r5",
+            "params": {"inner_radius": 0.1, "outer_radius": 0.2, "vacuum_radius": 5.0},
+        },
+        {
+            "geometry": "shell_in_vacuum",
+            "name": "shell_in_vacuum_r10",
+            "params": {"inner_radius": 0.1, "outer_radius": 0.2, "vacuum_radius": 10.0},
+        },
+        # Thin shell with large vacuum (the problematic case)
+        {
+            "geometry": "shell_in_vacuum",
+            "name": "shell_thin_r10",
+            "params": {"inner_radius": 0.96, "outer_radius": 1.0, "vacuum_radius": 10.0},
+        },
         {
             "geometry": "cylinder_in_vacuum",
             "params": {"radius": 0.15, "height": 0.4, "vacuum_radius": 1.0},
+        },
+        # Large vacuum radius tests (verify cell scaling fix for all geometries)
+        {
+            "geometry": "sphere_in_vacuum",
+            "name": "sphere_in_vacuum_r10",
+            "params": {"object_radius": 0.15, "vacuum_radius": 10.0},
+        },
+        {
+            "geometry": "ellipse_in_vacuum",
+            "name": "ellipse_in_vacuum_r10",
+            "params": {"rx": 0.2, "ry": 0.1, "vacuum_radius": 10.0},
+        },
+        {
+            "geometry": "cylinder_in_vacuum",
+            "name": "cylinder_in_vacuum_r10",
+            "params": {"radius": 0.15, "height": 0.4, "vacuum_radius": 10.0},
+        },
+        {
+            "geometry": "two_spheres",
+            "name": "two_spheres_r10",
+            "params": {"radius_1": 0.12, "radius_2": 0.08, "separation": 0.5, "vacuum_radius": 10.0},
+        },
+        {
+            "geometry": "sphere_near_wall",
+            "name": "sphere_near_wall_r10",
+            "params": {"object_radius": 0.1, "wall_distance": 0.15, "wall_thickness": 0.1, "vacuum_radius": 10.0},
+        },
+        {
+            "geometry": "custom_2d",
+            "name": "custom_hexagon_r10",
+            "params": {
+                "points": [
+                    [0.0, 0.2], [0.173, 0.1], [0.173, -0.1], [0.0, -0.2],
+                ],
+                "vacuum_radius": 10.0,
+            },
         },
         {
             "geometry": "two_spheres",

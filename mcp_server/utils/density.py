@@ -29,8 +29,6 @@ SAFE_NAMESPACE = {
 SPHERICAL_GEOMETRIES = {
     "sphere_in_vacuum",
     "sphere_domain",
-    "sphere_near_wall",
-    "two_spheres",
     "shell_in_vacuum",
 }
 

@@ -18,12 +18,13 @@ from utils.density import extract_density_value, SPHERICAL_GEOMETRIES
 
 
 # Mesh quality settings: (CellSizeMin, CellSizeMax, DistMax) relative to object size
+# Consistent 2.5x ramp between levels, 4x max/min ratio
 MESH_QUALITY_SETTINGS = {
-    "very_coarse": {"cell_min_factor": 0.5, "cell_max_factor": 0.8, "dist_max_factor": 2.0},
-    "coarse": {"cell_min_factor": 0.15, "cell_max_factor": 0.4, "dist_max_factor": 0.8},
-    "medium": {"cell_min_factor": 0.05, "cell_max_factor": 0.15, "dist_max_factor": 0.5},
-    "fine": {"cell_min_factor": 0.02, "cell_max_factor": 0.08, "dist_max_factor": 0.3},
-    "very_fine": {"cell_min_factor": 0.005, "cell_max_factor": 0.03, "dist_max_factor": 0.2},
+    "very_coarse": {"cell_min_factor": 0.125, "cell_max_factor": 0.5, "dist_max_factor": 2.0},
+    "coarse": {"cell_min_factor": 0.05, "cell_max_factor": 0.2, "dist_max_factor": 1.25},
+    "medium": {"cell_min_factor": 0.02, "cell_max_factor": 0.08, "dist_max_factor": 0.5},
+    "fine": {"cell_min_factor": 0.008, "cell_max_factor": 0.032, "dist_max_factor": 0.2},
+    "very_fine": {"cell_min_factor": 0.0032, "cell_max_factor": 0.0128, "dist_max_factor": 0.1},
 }
 
 # Default symmetry for each geometry
@@ -136,7 +137,7 @@ TOOL_DEFINITION = Tool(
         "(sphere_in_vacuum, ellipse_in_vacuum, etc.), plain domains (box_2d, disk, etc.), "
         "and custom shapes from file.\n\n"
         "IMPORTANT: For thin-shell problems (high α, high density contrast), provide "
-        "physics_params with alpha and density_contrast to enable automatic mesh refinement "
+        "physics_params with alpha and density to enable automatic mesh refinement "
         "near object boundaries. This ensures the thin shell region is properly resolved."
     ),
     inputSchema={
@@ -145,12 +146,38 @@ TOOL_DEFINITION = Tool(
             "geometry": {
                 "type": "string",
                 "enum": [
-                    "sphere_in_vacuum", "ellipse_in_vacuum", "ellipsoid_in_vacuum",
+                    "sphere_in_vacuum", "ellipse_in_vacuum",
                     "cylinder_in_vacuum", "shell_in_vacuum", "two_spheres", "sphere_near_wall",
                     "box_2d", "box_3d", "disk", "sphere_domain",
                     "custom_2d", "custom_3d"
                 ],
-                "description": "Geometry template.",
+                "description": (
+                    "Geometry template. Choose based on physical setup:\n\n"
+                    "OBJECT-IN-VACUUM (screening/force calculations):\n"
+                    "- sphere_in_vacuum: Spherical source in vacuum. Regions: object, vacuum. "
+                    "Default symmetry: axial (2D). 'r' = spherical radius.\n"
+                    "- ellipse_in_vacuum: Oblate/prolate ellipsoid in vacuum. Regions: object, vacuum. "
+                    "Default symmetry: axial (2D). 'r' = cylindrical radius.\n"
+                    "- cylinder_in_vacuum: Cylindrical source in vacuum. Regions: cylinder, vacuum. "
+                    "Default symmetry: axial (2D). 'r' = cylindrical radius.\n"
+                    "- shell_in_vacuum: Hollow spherical shell in vacuum. Regions: shell, vacuum. "
+                    "Default symmetry: axial (2D). 'r' = spherical radius.\n"
+                    "- two_spheres: Two spheres for force calculations. Regions: sphere_1, sphere_2, vacuum. "
+                    "Default symmetry: axial (2D). 'r' = cylindrical radius.\n"
+                    "- sphere_near_wall: Sphere near planar wall. Regions: sphere, wall, vacuum. "
+                    "Default symmetry: axial (2D). 'r' = cylindrical radius.\n\n"
+                    "PLAIN DOMAINS (no interior object):\n"
+                    "- sphere_domain: For spherically-symmetric profiles (NFW, isothermal). Regions: domain. "
+                    "Default symmetry: axial (2D). 'r' = spherical radius.\n"
+                    "- disk: For cylindrically-symmetric profiles. Regions: domain. "
+                    "Default symmetry: axial (2D). 'r' = cylindrical radius.\n"
+                    "- box_2d: 2D Cartesian rectangle. Regions: domain. Default symmetry: none (2D Cartesian).\n"
+                    "- box_3d: 3D Cartesian box. Regions: domain. Default symmetry: none (3D).\n\n"
+                    "CUSTOM SHAPES:\n"
+                    "- custom_2d: Arbitrary 2D shape from points. Points are [r, z] for axial symmetry, "
+                    "[x, y] for none. Regions: object, vacuum. Default symmetry: axial (2D). 'r' = cylindrical radius.\n"
+                    "- custom_3d: Arbitrary 3D shape from contours. Regions: object. Default symmetry: none (3D)."
+                ),
             },
             "params": {
                 "type": "object",
@@ -174,7 +201,7 @@ TOOL_DEFINITION = Tool(
                     "wall_distance": {"type": "number", "description": "Distance from sphere center to wall (sphere_near_wall)"},
                     "points": {"type": "array", "description": "Array of [r,z] points for custom_2d"},
                     "shape_file": {"type": "string", "description": "Path to file with shape points (custom_2d)"},
-                    "contours_file": {"type": "string", "description": "Path to 3D contours file (custom_3d)"},
+                    "contour_file": {"type": "string", "description": "Path to 3D contour file (custom_3d)"},
                 },
             },
             "mesh_quality": {
@@ -286,8 +313,10 @@ def _create_sphere_in_vacuum(
     MT.points_to_surface(points)
 
     # Mark as subdomain with refinement
+    # cell_min based on object size to resolve boundary
+    # cell_max based on vacuum_radius so cells can grow large far from object
     cell_min = quality["cell_min_factor"] * object_radius
-    cell_max = quality["cell_max_factor"] * object_radius
+    cell_max = quality["cell_max_factor"] * vacuum_radius
     dist_max = quality["dist_max_factor"] * vacuum_radius
     MT.create_subdomain(CellSizeMin=cell_min, CellSizeMax=cell_max, DistMax=dist_max)
 
@@ -301,6 +330,7 @@ def _create_sphere_in_vacuum(
         DistMax=bg_dist_max,
         background_radius=vacuum_radius,
         wall_thickness=wall_thickness,  # None if not specified
+        #refine_outer_wall_boundary=True,  # Use scaled cell sizes for wall
         symmetry="vertical",  # Axisymmetric - only mesh r >= 0
     )
 
@@ -335,9 +365,11 @@ def _create_ellipse_in_vacuum(
     MT.points_to_surface(points)
 
     # Mark as subdomain with refinement
+    # cell_min based on ellipse size to resolve boundary
+    # cell_max based on vacuum_radius so cells can grow large far from object
     char_size = max(rx, ry)
     cell_min = quality["cell_min_factor"] * char_size
-    cell_max = quality["cell_max_factor"] * char_size
+    cell_max = quality["cell_max_factor"] * vacuum_radius
     dist_max = quality["dist_max_factor"] * vacuum_radius
     MT.create_subdomain(CellSizeMin=cell_min, CellSizeMax=cell_max, DistMax=dist_max)
 
@@ -350,6 +382,7 @@ def _create_ellipse_in_vacuum(
         DistMax=dist_max,
         background_radius=vacuum_radius,
         wall_thickness=None,
+        refine_outer_wall_boundary=True,  # Use scaled cell sizes if wall added
         symmetry="vertical",  # Axisymmetric
     )
 
@@ -372,10 +405,9 @@ def _create_disk(
     """Create simple disk domain (no interior object)."""
     radius = params["radius"]
 
-    # For plain domains, use radius/5 as base size for reasonable resolution
-    char_size = radius / 5
-    cell_min = quality["cell_min_factor"] * char_size
-    cell_max = quality["cell_max_factor"] * char_size
+    # For plain domains, use radius directly (no object boundary to resolve)
+    cell_min = quality["cell_min_factor"] * radius
+    cell_max = quality["cell_max_factor"] * radius
     dist_max = quality["dist_max_factor"] * radius
     MT.create_background_mesh(
         CellSizeMin=cell_min,
@@ -383,6 +415,7 @@ def _create_disk(
         DistMax=dist_max,
         background_radius=radius,
         wall_thickness=None,
+        refine_outer_wall_boundary=True,  # Use scaled cell sizes if wall added
         symmetry="vertical",  # Axisymmetric
     )
 
@@ -409,8 +442,8 @@ def _create_box_2d(
     # Create rectangle
     MT.create_rectangle(dx=width, dy=height)
 
-    # For plain domains, use min dimension / 5 for reasonable resolution
-    char_size = min(width, height) / 5
+    # For plain domains, use min dimension directly (no object boundary to resolve)
+    char_size = min(width, height)
     cell_min = quality["cell_min_factor"] * char_size
     cell_max = quality["cell_max_factor"] * char_size
     dist_max = quality["dist_max_factor"] * max(width, height)
@@ -464,9 +497,11 @@ def _create_shell_in_vacuum(
     MT.points_to_surface(shell_points)
 
     # Mark as subdomain with refinement
+    # cell_min based on shell thickness to resolve thin shell
+    # cell_max based on vacuum_radius so cells can grow large far from shell
     char_size = outer_radius - inner_radius
     cell_min = quality["cell_min_factor"] * char_size
-    cell_max = quality["cell_max_factor"] * char_size
+    cell_max = quality["cell_max_factor"] * vacuum_radius
     dist_max = quality["dist_max_factor"] * vacuum_radius
     MT.create_subdomain(CellSizeMin=cell_min, CellSizeMax=cell_max, DistMax=dist_max)
 
@@ -479,6 +514,7 @@ def _create_shell_in_vacuum(
         DistMax=dist_max,
         background_radius=vacuum_radius,
         wall_thickness=None,
+        refine_outer_wall_boundary=True,  # Use scaled cell sizes if wall added
         symmetry="vertical",  # Axisymmetric
     )
 
@@ -508,9 +544,11 @@ def _create_cylinder_in_vacuum(
     MT.translate_x(rect, dx=radius / 2)  # Move to positive r
 
     # Mark as subdomain with refinement
+    # cell_min based on cylinder size to resolve boundary
+    # cell_max based on vacuum_radius so cells can grow large far from object
     char_size = min(radius, height)
     cell_min = quality["cell_min_factor"] * char_size
-    cell_max = quality["cell_max_factor"] * char_size
+    cell_max = quality["cell_max_factor"] * vacuum_radius
     dist_max = quality["dist_max_factor"] * vacuum_radius
     MT.create_subdomain(CellSizeMin=cell_min, CellSizeMax=cell_max, DistMax=dist_max)
 
@@ -523,6 +561,7 @@ def _create_cylinder_in_vacuum(
         DistMax=dist_max,
         background_radius=vacuum_radius,
         wall_thickness=None,
+        refine_outer_wall_boundary=True,  # Use scaled cell sizes if wall added
         symmetry="vertical",  # Axisymmetric
     )
 
@@ -545,10 +584,9 @@ def _create_sphere_domain(
     """Create simple spherical domain (no interior object)."""
     radius = params["radius"]
 
-    # For plain domains, use radius/5 as base size for reasonable resolution
-    char_size = radius / 5
-    cell_min = quality["cell_min_factor"] * char_size
-    cell_max = quality["cell_max_factor"] * char_size
+    # For plain domains, use radius directly (no object boundary to resolve)
+    cell_min = quality["cell_min_factor"] * radius
+    cell_max = quality["cell_max_factor"] * radius
     dist_max = quality["dist_max_factor"] * radius
     MT.create_background_mesh(
         CellSizeMin=cell_min,
@@ -556,6 +594,7 @@ def _create_sphere_domain(
         DistMax=dist_max,
         background_radius=radius,
         wall_thickness=None,
+        refine_outer_wall_boundary=True,  # Use scaled cell sizes if wall added
         symmetry="vertical",  # Axisymmetric
     )
 
@@ -582,12 +621,14 @@ def _create_two_spheres(
     vacuum_radius = params["vacuum_radius"]
 
     # Create first sphere (source) at origin using explicit points
+    # cell_min based on sphere size to resolve boundary
+    # cell_max based on vacuum_radius so cells can grow large far from object
     n_boundary_points = 50
     points_1 = _sphere_points(radius_1, n_boundary_points)
     points_1 = MT.constrain_distance(points_1)
     MT.points_to_surface(points_1)
     cell_min = quality["cell_min_factor"] * radius_1
-    cell_max = quality["cell_max_factor"] * radius_1
+    cell_max = quality["cell_max_factor"] * vacuum_radius
     dist_max = quality["dist_max_factor"] * vacuum_radius
     MT.create_subdomain(CellSizeMin=cell_min, CellSizeMax=cell_max, DistMax=dist_max)
 
@@ -598,7 +639,7 @@ def _create_two_spheres(
     points_2 = MT.constrain_distance(points_2)
     MT.points_to_surface(points_2)
     cell_min2 = quality["cell_min_factor"] * radius_2
-    cell_max2 = quality["cell_max_factor"] * radius_2
+    cell_max2 = quality["cell_max_factor"] * vacuum_radius
     MT.create_subdomain(CellSizeMin=cell_min2, CellSizeMax=cell_max2, DistMax=dist_max)
 
     # Create background (vacuum) - no wall by default
@@ -610,6 +651,7 @@ def _create_two_spheres(
         DistMax=dist_max,
         background_radius=vacuum_radius,
         wall_thickness=None,
+        refine_outer_wall_boundary=True,  # Use scaled cell sizes if wall added
         symmetry="vertical",  # Axisymmetric
     )
 
@@ -652,8 +694,10 @@ def _create_sphere_near_wall(
     wall = MT.intersect_shapes(wall_disk, wall_rect)
 
     # Mark wall as subdomain
+    # cell_min based on wall thickness to resolve boundary
+    # cell_max based on vacuum_radius so cells can grow large far from wall
     wall_cell_min = quality["cell_min_factor"] * wall_thickness
-    wall_cell_max = quality["cell_max_factor"] * wall_thickness
+    wall_cell_max = quality["cell_max_factor"] * vacuum_radius
     dist_max = quality["dist_max_factor"] * vacuum_radius
     MT.create_subdomain(CellSizeMin=wall_cell_min, CellSizeMax=wall_cell_max, DistMax=dist_max)
 
@@ -662,8 +706,10 @@ def _create_sphere_near_wall(
     MT.translate_y(sphere, dy=wall_distance)  # Sphere center at z=wall_distance
 
     # Mark sphere as subdomain with refinement
+    # cell_min based on sphere size to resolve boundary
+    # cell_max based on vacuum_radius so cells can grow large far from object
     cell_min = quality["cell_min_factor"] * object_radius
-    cell_max = quality["cell_max_factor"] * object_radius
+    cell_max = quality["cell_max_factor"] * vacuum_radius
     MT.create_subdomain(CellSizeMin=cell_min, CellSizeMax=cell_max, DistMax=dist_max)
 
     # Create vacuum region (upper half-disk, z >= 0)
@@ -700,8 +746,8 @@ def _create_box_3d(
     # In 3D, create a box
     MT.create_box(dx=width, dy=height, dz=depth)
 
-    # For 3D plain domains, use min dimension / 3 (3D scales cubically!)
-    char_size = min(width, height, depth) / 3
+    # For plain domains, use min dimension directly (no object boundary to resolve)
+    char_size = min(width, height, depth)
     cell_min = quality["cell_min_factor"] * char_size
     cell_max = quality["cell_max_factor"] * char_size
     dist_max = quality["dist_max_factor"] * max(width, height, depth)
@@ -765,9 +811,11 @@ def _create_custom_2d(
     MT.points_to_surface(points_3d)
 
     # Mark as subdomain with refinement
+    # cell_min based on object size to resolve boundary
+    # cell_max based on vacuum_radius so cells can grow large far from object
     char_size = float(np.max(points_2d) - np.min(points_2d))
     cell_min = quality["cell_min_factor"] * char_size
-    cell_max = quality["cell_max_factor"] * char_size
+    cell_max = quality["cell_max_factor"] * vacuum_radius
     dist_max = quality["dist_max_factor"] * vacuum_radius
     MT.create_subdomain(CellSizeMin=cell_min, CellSizeMax=cell_max, DistMax=dist_max)
 
@@ -781,6 +829,7 @@ def _create_custom_2d(
             "DistMax": dist_max,
             "background_radius": vacuum_radius,
             "wall_thickness": 0.1 * vacuum_radius,
+            "refine_outer_wall_boundary": True,  # Use scaled cell sizes for wall
         }
         if is_axisymmetric:
             bg_kwargs["symmetry"] = "vertical"
