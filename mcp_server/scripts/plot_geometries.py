@@ -232,6 +232,16 @@ async def main():
             "geometry": "sphere_near_wall",
             "params": {"object_radius": 0.1, "wall_distance": 0.15, "wall_thickness": 0.1, "vacuum_radius": 1.0},
         },
+        # Sphere in density profile (for astrophysical scenarios)
+        {
+            "geometry": "sphere_in_profile",
+            "params": {"object_radius": 0.15, "domain_radius": 1.0},
+        },
+        {
+            "geometry": "sphere_in_profile",
+            "name": "sphere_in_profile_offset",
+            "params": {"object_radius": 0.1, "domain_radius": 1.0, "center_z": 0.4},
+        },
         # Plain domain templates
         {
             "geometry": "sphere_domain",
@@ -250,6 +260,16 @@ async def main():
             "geometry": "box_3d",
             "params": {"width": 2.0, "height": 1.5, "depth": 1.0},
             "symmetry": "none",
+        },
+        # Parallel plates (translation symmetry)
+        {
+            "geometry": "parallel_plates",
+            "params": {"plate_separation": 1.0, "plate_thickness": 0.1},
+        },
+        {
+            "geometry": "parallel_plates",
+            "name": "parallel_plates_thick",
+            "params": {"plate_separation": 1.0, "plate_thickness": 0.3, "domain_height": 1.5},
         },
         # Custom shapes
         {
@@ -325,10 +345,10 @@ async def main():
         },
         {
             "geometry": "custom_2d",
-            "name": "custom_2d_no_symmetry",
-            "symmetry": "none",
+            "name": "custom_2d_translation",
+            "symmetry": "translation",
             "params": {
-                # Full hexagon - all points kept in 2D no-symmetry mode
+                # Full hexagon - all points kept with translation symmetry (extruded in z)
                 "points": [
                     [0.2, 0.0], [0.1, 0.173], [-0.1, 0.173],
                     [-0.2, 0.0], [-0.1, -0.173], [0.1, -0.173],

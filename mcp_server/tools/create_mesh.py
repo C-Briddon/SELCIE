@@ -28,20 +28,31 @@ MESH_QUALITY_SETTINGS = {
 }
 
 # Default symmetry for each geometry
+# "axial" = 2D mesh revolved around z-axis (axisymmetric)
+# "translation" = 2D mesh extended in z direction (translation-invariant)
+# "none" = 3D mesh, no symmetry transformation
 DEFAULT_SYMMETRY = {
     "sphere_in_vacuum": "axial",
     "ellipse_in_vacuum": "axial",
-    "ellipsoid_in_vacuum": "none",
+    "ellipsoid_in_vacuum": "none",  # True 3D mesh
     "cylinder_in_vacuum": "axial",
     "shell_in_vacuum": "axial",
     "two_spheres": "axial",
     "sphere_near_wall": "axial",
-    "box_2d": "none",
-    "box_3d": "none",
+    "box_2d": "translation",
+    "box_3d": "none",  # True 3D mesh
     "disk": "axial",
     "sphere_domain": "axial",
+    "sphere_in_profile": "axial",
+    "parallel_plates": "translation",
     "custom_2d": "axial",
-    "custom_3d": "none",
+    "custom_3d": "none",  # True 3D mesh
+}
+
+# Geometries where symmetry can be overridden by the user
+# All other geometries have fixed symmetry required for correct 3D shape
+CONFIGURABLE_SYMMETRY = {
+    "custom_2d",  # Can be axial (revolved) or translation (extruded)
 }
 
 # Refinement limits to prevent excessive cell counts
@@ -148,35 +159,41 @@ TOOL_DEFINITION = Tool(
                 "enum": [
                     "sphere_in_vacuum", "ellipse_in_vacuum",
                     "cylinder_in_vacuum", "shell_in_vacuum", "two_spheres", "sphere_near_wall",
-                    "box_2d", "box_3d", "disk", "sphere_domain",
+                    "sphere_in_profile",
+                    "box_2d", "box_3d", "disk", "sphere_domain", "parallel_plates",
                     "custom_2d", "custom_3d"
                 ],
                 "description": (
                     "Geometry template. Choose based on physical setup:\n\n"
                     "OBJECT-IN-VACUUM (screening/force calculations):\n"
                     "- sphere_in_vacuum: Spherical source in vacuum. Regions: object, vacuum. "
-                    "Default symmetry: axial (2D). 'r' = spherical radius.\n"
+                    "Fixed symmetry: axial (2D). 'r' = spherical radius.\n"
                     "- ellipse_in_vacuum: Oblate/prolate ellipsoid in vacuum. Regions: object, vacuum. "
-                    "Default symmetry: axial (2D). 'r' = cylindrical radius.\n"
+                    "Fixed symmetry: axial (2D). 'r' = cylindrical radius.\n"
                     "- cylinder_in_vacuum: Cylindrical source in vacuum. Regions: cylinder, vacuum. "
-                    "Default symmetry: axial (2D). 'r' = cylindrical radius.\n"
+                    "Fixed symmetry: axial (2D). 'r' = cylindrical radius.\n"
                     "- shell_in_vacuum: Hollow spherical shell in vacuum. Regions: shell, vacuum. "
-                    "Default symmetry: axial (2D). 'r' = spherical radius.\n"
+                    "Fixed symmetry: axial (2D). 'r' = spherical radius.\n"
                     "- two_spheres: Two spheres for force calculations. Regions: sphere_1, sphere_2, vacuum. "
-                    "Default symmetry: axial (2D). 'r' = cylindrical radius.\n"
+                    "Fixed symmetry: axial (2D). 'r' = cylindrical radius.\n"
                     "- sphere_near_wall: Sphere near planar wall. Regions: sphere, wall, vacuum. "
-                    "Default symmetry: axial (2D). 'r' = cylindrical radius.\n\n"
+                    "Fixed symmetry: axial (2D). 'r' = cylindrical radius.\n"
+                    "- sphere_in_profile: Sphere in spatially-varying density profile (e.g., NFW, isothermal). "
+                    "Regions: sphere, background. Fixed symmetry: axial (2D). 'r' = spherical radius. "
+                    "Use center_z to offset sphere along z-axis.\n\n"
                     "PLAIN DOMAINS (no interior object):\n"
                     "- sphere_domain: For spherically-symmetric profiles (NFW, isothermal). Regions: domain. "
-                    "Default symmetry: axial (2D). 'r' = spherical radius.\n"
+                    "Fixed symmetry: axial (2D). 'r' = spherical radius.\n"
                     "- disk: For cylindrically-symmetric profiles. Regions: domain. "
-                    "Default symmetry: axial (2D). 'r' = cylindrical radius.\n"
-                    "- box_2d: 2D Cartesian rectangle. Regions: domain. Default symmetry: none (2D Cartesian).\n"
-                    "- box_3d: 3D Cartesian box. Regions: domain. Default symmetry: none (3D).\n\n"
+                    "Fixed symmetry: axial (2D). 'r' = cylindrical radius.\n"
+                    "- box_2d: 2D Cartesian rectangle. Regions: domain. Default symmetry: translation (2D).\n"
+                    "- box_3d: 3D Cartesian box. Regions: domain. Fixed symmetry: none (true 3D).\n"
+                    "- parallel_plates: Two parallel plates with vacuum gap. Regions: vacuum, plate. "
+                    "Fixed symmetry: translation (2D extended in y). 'x' = perpendicular to plates.\n\n"
                     "CUSTOM SHAPES:\n"
                     "- custom_2d: Arbitrary 2D shape from points. Points are [r, z] for axial symmetry, "
-                    "[x, y] for none. Regions: object, vacuum. Default symmetry: axial (2D). 'r' = cylindrical radius.\n"
-                    "- custom_3d: Arbitrary 3D shape from contours. Regions: object. Default symmetry: none (3D)."
+                    "[x, y] for translation. Regions: object, vacuum. Default symmetry: axial (2D). 'r' = cylindrical radius.\n"
+                    "- custom_3d: Arbitrary 3D shape from contours. Regions: object. Fixed symmetry: none (true 3D)."
                 ),
             },
             "params": {
@@ -185,6 +202,8 @@ TOOL_DEFINITION = Tool(
                 "properties": {
                     "object_radius": {"type": "number", "description": "Radius of spherical source"},
                     "vacuum_radius": {"type": "number", "description": "Outer radius of vacuum region"},
+                    "domain_radius": {"type": "number", "description": "Outer radius of domain (sphere_in_profile)"},
+                    "center_z": {"type": "number", "description": "Z-position of sphere center (sphere_in_profile, default 0)"},
                     "wall_thickness": {"type": "number", "description": "Wall thickness (sphere_in_vacuum, sphere_near_wall)"},
                     "rx": {"type": "number", "description": "Semi-axis in r/x direction"},
                     "ry": {"type": "number", "description": "Semi-axis in z/y direction"},
@@ -202,6 +221,9 @@ TOOL_DEFINITION = Tool(
                     "points": {"type": "array", "description": "Array of [r,z] points for custom_2d"},
                     "shape_file": {"type": "string", "description": "Path to file with shape points (custom_2d)"},
                     "contour_file": {"type": "string", "description": "Path to 3D contour file (custom_3d)"},
+                    "plate_separation": {"type": "number", "description": "Gap between inner surfaces of plates (parallel_plates)"},
+                    "plate_thickness": {"type": "number", "description": "Thickness of each plate (parallel_plates)"},
+                    "domain_height": {"type": "number", "description": "Height of domain in y direction (parallel_plates, default=plate_separation)"},
                 },
             },
             "mesh_quality": {
@@ -212,8 +234,15 @@ TOOL_DEFINITION = Tool(
             },
             "symmetry": {
                 "type": "string",
-                "enum": ["axial", "none"],
-                "description": "Override default symmetry.",
+                "enum": ["axial", "translation", "none"],
+                "description": (
+                    "Override symmetry for geometries with 'Default symmetry'. "
+                    "Geometries with 'Fixed symmetry' ignore this parameter. "
+                    "SELCIE always solves 3D problems; 2D meshes are slices with implied symmetry:\n"
+                    "- axial: 2D mesh in (r,z) revolved around z-axis (axisymmetric).\n"
+                    "- translation: 2D mesh in (x,y) extended infinitely in z (translation-invariant).\n"
+                    "- none: Use geometry's default symmetry."
+                ),
             },
             "custom_id": {
                 "type": "string",
@@ -460,6 +489,71 @@ def _create_box_2d(
     return regions, bounds
 
 
+def _create_parallel_plates(
+    MT: MeshingTools,
+    params: dict,
+    quality: dict,
+) -> tuple[list[str], dict]:
+    """Create parallel plates with vacuum gap.
+
+    Creates two parallel plates separated by a vacuum region.
+    Uses translation symmetry (symmetry="none") - the 2D mesh
+    extends via translation in the y direction.
+
+    Layout (in x-y plane):
+        [plate_L] [vacuum] [plate_R]
+        x: 0 to plate_thickness | plate_thickness to plate_thickness+separation | ...
+    """
+    plate_separation = params["plate_separation"]
+    plate_thickness = params["plate_thickness"]
+    domain_height = params.get("domain_height", plate_separation)
+
+    total_width = 2 * plate_thickness + plate_separation
+
+    # Create vacuum region first (inner)
+    # Centered in x, full height in y
+    vac_x_min = plate_thickness
+    vac_x_max = plate_thickness + plate_separation
+    vacuum = MT.points_to_surface([
+        (vac_x_min, 0, 0),
+        (vac_x_max, 0, 0),
+        (vac_x_max, domain_height, 0),
+        (vac_x_min, domain_height, 0),
+    ])
+
+    # Subdomain for vacuum - finer near plate boundaries
+    cell_min_vac = quality["cell_min_factor"] * plate_separation
+    cell_max_vac = quality["cell_max_factor"] * plate_separation
+    dist_max = quality["dist_max_factor"] * plate_separation
+    MT.create_subdomain(CellSizeMin=cell_min_vac, CellSizeMax=cell_max_vac, DistMax=dist_max)
+
+    # Create full domain (outer) embedding vacuum
+    MT.points_to_surface([
+        (0, 0, 0),
+        (total_width, 0, 0),
+        (total_width, domain_height, 0),
+        (0, domain_height, 0),
+    ], embed=vacuum)
+
+    # Subdomain for plates
+    # cell_min based on plate_thickness to resolve boundary
+    # cell_max based on plate_separation so cells can grow large
+    cell_min_plate = quality["cell_min_factor"] * plate_thickness
+    cell_max_plate = quality["cell_max_factor"] * plate_separation
+    MT.create_subdomain(CellSizeMin=cell_min_plate, CellSizeMax=cell_max_plate, DistMax=dist_max)
+
+    # Regions in creation order: vacuum first, then plate
+    regions = ["vacuum", "plate"]
+    bounds = {
+        "x_min": 0,
+        "x_max": total_width,
+        "y_min": 0,
+        "y_max": domain_height,
+    }
+
+    return regions, bounds
+
+
 def _create_shell_in_vacuum(
     MT: MeshingTools,
     params: dict,
@@ -606,6 +700,65 @@ def _create_sphere_domain(
         "z_max": radius,
     }
 
+    return regions, bounds
+
+
+def _create_sphere_in_profile(
+    MT: MeshingTools,
+    params: dict,
+    quality: dict,
+) -> tuple[list[str], dict]:
+    """Create sphere in density profile geometry.
+
+    The sphere can be displaced along z-axis using center_z parameter
+    while maintaining axial symmetry. The background density profile
+    is measured from origin (r=0), so a sphere at center_z=5 sits at
+    radius 5 from the profile center.
+    """
+    object_radius = params["object_radius"]
+    domain_radius = params["domain_radius"]
+    center_z = params.get("center_z", 0.0)  # Default centered
+
+    # Create sphere using explicit points for smooth boundary in r >= 0
+    # (using create_ellipse results in sphere extending to r < 0)
+    n_boundary_points = 50
+    points = _sphere_points(object_radius, n_boundary_points)
+
+    # Offset z-coordinates if center_z != 0
+    if center_z != 0.0:
+        points = [[p[0], p[1] + center_z, p[2]] for p in points]
+
+    points = MT.constrain_distance(points)
+    MT.points_to_surface(points)
+
+    # Mark sphere as subdomain
+    # cell_min based on object size to resolve boundary
+    # cell_max based on domain_radius so cells can grow large far from object
+    cell_min = quality["cell_min_factor"] * object_radius
+    cell_max = quality["cell_max_factor"] * domain_radius
+    dist_max = quality["dist_max_factor"] * domain_radius
+    MT.create_subdomain(CellSizeMin=cell_min, CellSizeMax=cell_max, DistMax=dist_max)
+
+    # Create background
+    bg_cell_min = quality["cell_min_factor"] * domain_radius
+    bg_cell_max = quality["cell_max_factor"] * domain_radius
+    bg_dist_max = quality["dist_max_factor"] * domain_radius
+    MT.create_background_mesh(
+        CellSizeMin=bg_cell_min,
+        CellSizeMax=bg_cell_max,
+        DistMax=bg_dist_max,
+        background_radius=domain_radius,
+        wall_thickness=None,
+        symmetry="vertical",
+    )
+
+    regions = ["sphere", "background"]
+    bounds = {
+        "r_min": 0.0,
+        "r_max": domain_radius,
+        "z_min": -domain_radius,
+        "z_max": domain_radius,
+    }
     return regions, bounds
 
 
@@ -917,14 +1070,33 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
     geometry = args["geometry"]
     params = args["params"]
     mesh_quality = args.get("mesh_quality", "medium")
-    symmetry = args.get("symmetry") or DEFAULT_SYMMETRY.get(geometry, "axial")
+    # Determine symmetry
+    # Most geometries have fixed symmetry; only CONFIGURABLE_SYMMETRY can be overridden
+    requested_symmetry = args.get("symmetry")
+    default_symmetry = DEFAULT_SYMMETRY.get(geometry, "axial")
+    warnings = []
+
+    if geometry in CONFIGURABLE_SYMMETRY and requested_symmetry and requested_symmetry != "none":
+        # Configurable geometry with user override
+        symmetry = requested_symmetry
+    elif geometry not in CONFIGURABLE_SYMMETRY and requested_symmetry and requested_symmetry != "none" and requested_symmetry != default_symmetry:
+        # Fixed symmetry - ignore user override and warn
+        symmetry = default_symmetry
+        warnings.append(
+            f"Symmetry '{requested_symmetry}' ignored for '{geometry}' "
+            f"(requires '{default_symmetry}')"
+        )
+    else:
+        # Use default
+        symmetry = default_symmetry
     custom_id = args.get("custom_id")
 
     # Validate geometry is implemented
     implemented = [
         "sphere_in_vacuum", "ellipse_in_vacuum", "disk", "box_2d",
-        "shell_in_vacuum", "cylinder_in_vacuum", "sphere_domain", "two_spheres",
-        "sphere_near_wall", "box_3d", "custom_2d", "custom_3d",
+        "shell_in_vacuum", "cylinder_in_vacuum", "sphere_domain", "sphere_in_profile",
+        "two_spheres", "sphere_near_wall", "box_3d", "parallel_plates",
+        "custom_2d", "custom_3d",
     ]
     if geometry not in implemented:
         return [TextContent(type="text", text=json.dumps({
@@ -944,9 +1116,11 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
         "shell_in_vacuum": ["inner_radius", "outer_radius", "vacuum_radius"],
         "cylinder_in_vacuum": ["radius", "height", "vacuum_radius"],
         "sphere_domain": ["radius"],
+        "sphere_in_profile": ["object_radius", "domain_radius"],
         "two_spheres": ["radius_1", "radius_2", "separation", "vacuum_radius"],
         "sphere_near_wall": ["object_radius", "wall_distance", "vacuum_radius"],
         "box_3d": ["width", "height", "depth"],
+        "parallel_plates": ["plate_separation", "plate_thickness"],
     }
 
     missing = [p for p in required_params.get(geometry, []) if p not in params]
@@ -1043,6 +1217,10 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
             subdomain_size = min(params.get("radius_1", 0), params.get("radius_2", 0))
         elif geometry == "sphere_near_wall":
             subdomain_size = params.get("object_radius")
+        elif geometry == "sphere_in_profile":
+            subdomain_size = params.get("object_radius")
+        elif geometry == "parallel_plates":
+            subdomain_size = params.get("plate_thickness")
         elif geometry == "custom_2d":
             if "points" in params:
                 import numpy as np
@@ -1097,12 +1275,16 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
             regions, bounds = _create_cylinder_in_vacuum(MT, params, quality)
         elif geometry == "sphere_domain":
             regions, bounds = _create_sphere_domain(MT, params, quality)
+        elif geometry == "sphere_in_profile":
+            regions, bounds = _create_sphere_in_profile(MT, params, quality)
         elif geometry == "two_spheres":
             regions, bounds = _create_two_spheres(MT, params, quality)
         elif geometry == "sphere_near_wall":
             regions, bounds = _create_sphere_near_wall(MT, params, quality)
         elif geometry == "box_3d":
             regions, bounds = _create_box_3d(MT, params, quality)
+        elif geometry == "parallel_plates":
+            regions, bounds = _create_parallel_plates(MT, params, quality)
         elif geometry == "custom_2d":
             regions, bounds = _create_custom_2d(MT, params, quality, symmetry)
         elif geometry == "custom_3d":
@@ -1200,8 +1382,12 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
 
     # Add warning for large meshes
     if n_cells > 100000:
-        result["warning"] = f"Very large mesh ({n_cells:,} cells). Solving may take a long time and use significant memory. Consider using a coarser mesh quality."
+        warnings.append(f"Very large mesh ({n_cells:,} cells). Solving may take a long time and use significant memory. Consider using a coarser mesh quality.")
     elif n_cells > 50000:
-        result["warning"] = f"Large mesh ({n_cells:,} cells). Solving may be slow. Consider using a coarser mesh quality if performance is an issue."
+        warnings.append(f"Large mesh ({n_cells:,} cells). Solving may be slow. Consider using a coarser mesh quality if performance is an issue.")
+
+    # Include any warnings in response
+    if warnings:
+        result["warnings"] = warnings
 
     return [TextContent(type="text", text=json.dumps(result, indent=2))]

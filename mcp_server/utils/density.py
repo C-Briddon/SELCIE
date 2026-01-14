@@ -30,6 +30,7 @@ SPHERICAL_GEOMETRIES = {
     "sphere_in_vacuum",
     "sphere_domain",
     "shell_in_vacuum",
+    "sphere_in_profile",
 }
 
 # Supported file extensions for density profiles

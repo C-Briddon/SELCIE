@@ -170,13 +170,13 @@ class TestCreateMeshBox2D:
             "geometry": "box_2d",
             "params": {"width": 2.0, "height": 1.0},
             "mesh_quality": "coarse",
-            "symmetry": "none",
+            # "none" means use default, which is "translation" for box_2d
         })
 
         data = json.loads(result[0].text)
         assert "error" not in data
         assert data["geometry"] == "box_2d"
-        assert data["symmetry"] == "none"
+        assert data["symmetry"] == "translation"
 
 
 class TestCreateMeshSphereNearWall:
@@ -446,3 +446,197 @@ class TestCreateMeshNotImplemented:
         data = json.loads(result[0].text)
         assert "error" in data
         assert data["error"]["code"] == "NOT_IMPLEMENTED"
+
+
+class TestCreateMeshSphereInProfile:
+    """Test sphere_in_profile geometry."""
+
+    @pytest.fixture(autouse=True)
+    def reset(self):
+        """Reset session before each test."""
+        reset_session()
+
+    @pytest.mark.asyncio
+    async def test_basic_sphere_in_profile(self):
+        """Create a sphere in density profile mesh."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "sphere_in_profile",
+            "params": {
+                "object_radius": 0.1,
+                "domain_radius": 1.0,
+            },
+            "mesh_quality": "coarse",
+        })
+
+        assert len(result) == 1
+        data = json.loads(result[0].text)
+
+        assert "error" not in data
+        assert data["geometry"] == "sphere_in_profile"
+        assert data["symmetry"] == "axial"
+        assert data["dimension"] == 2
+        assert "sphere" in data["regions"]
+        assert "background" in data["regions"]
+        assert data["regions"]["sphere"] == 0  # First subdomain
+        assert data["regions"]["background"] == 1  # Second subdomain
+
+    @pytest.mark.asyncio
+    async def test_offset_sphere(self):
+        """Sphere displaced along z-axis."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "sphere_in_profile",
+            "params": {
+                "object_radius": 0.1,
+                "domain_radius": 2.0,
+                "center_z": 0.5,
+            },
+            "mesh_quality": "coarse",
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" not in data
+        assert data["regions"]["sphere"] == 0
+        assert data["regions"]["background"] == 1
+
+    @pytest.mark.asyncio
+    async def test_missing_params(self):
+        """Missing required parameters should error."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "sphere_in_profile",
+            "params": {
+                "object_radius": 0.1,
+                # missing domain_radius
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "MISSING_PARAMS"
+
+
+class TestCreateMeshParallelPlates:
+    """Test parallel_plates geometry."""
+
+    @pytest.fixture(autouse=True)
+    def reset(self):
+        """Reset session before each test."""
+        reset_session()
+
+    @pytest.mark.asyncio
+    async def test_basic_parallel_plates(self):
+        """Create parallel plates mesh."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "parallel_plates",
+            "params": {
+                "plate_separation": 1.0,
+                "plate_thickness": 0.1,
+            },
+            "mesh_quality": "coarse",
+        })
+
+        assert len(result) == 1
+        data = json.loads(result[0].text)
+
+        assert "error" not in data
+        assert data["geometry"] == "parallel_plates"
+        assert data["symmetry"] == "translation"
+        assert data["dimension"] == 2
+        assert "vacuum" in data["regions"]
+        assert "plate" in data["regions"]
+        assert data["regions"]["vacuum"] == 0
+        assert data["regions"]["plate"] == 1
+
+    @pytest.mark.asyncio
+    async def test_parallel_plates_with_domain_height(self):
+        """Parallel plates with custom domain height."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "parallel_plates",
+            "params": {
+                "plate_separation": 1.0,
+                "plate_thickness": 0.1,
+                "domain_height": 2.0,
+            },
+            "mesh_quality": "coarse",
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" not in data
+        assert data["domain_bounds"]["y_max"] == 2.0
+
+    @pytest.mark.asyncio
+    async def test_parallel_plates_missing_params(self):
+        """Missing required parameters should error."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "parallel_plates",
+            "params": {
+                "plate_separation": 1.0,
+                # missing plate_thickness
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "MISSING_PARAMS"
+
+
+class TestFixedSymmetry:
+    """Test that fixed symmetry geometries cannot be overridden."""
+
+    @pytest.fixture(autouse=True)
+    def reset(self):
+        """Reset session before each test."""
+        reset_session()
+
+    @pytest.mark.asyncio
+    async def test_sphere_symmetry_override_ignored(self):
+        """Attempting to override sphere_in_vacuum symmetry should warn."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "sphere_in_vacuum",
+            "params": {"object_radius": 0.1, "vacuum_radius": 1.0},
+            "mesh_quality": "coarse",
+            "symmetry": "translation",  # Invalid for sphere
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" not in data
+        # Should still use axial despite request
+        assert data["symmetry"] == "axial"
+        # Should have warning about ignored symmetry
+        assert "warnings" in data
+        assert any("translation" in w and "ignored" in w for w in data["warnings"])
+
+    @pytest.mark.asyncio
+    async def test_custom_2d_symmetry_override_allowed(self):
+        """custom_2d symmetry can be overridden (not fixed)."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "custom_2d",
+            "params": {
+                "points": [[0.0, 0.2], [0.2, 0.0], [0.0, -0.2]],
+                "vacuum_radius": 1.0,
+            },
+            "mesh_quality": "coarse",
+            "symmetry": "translation",  # Override default axial
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" not in data
+        # Should use the requested symmetry
+        assert data["symmetry"] == "translation"
+        # No warning about ignored symmetry
+        assert "warnings" not in data or not any("ignored" in w for w in data.get("warnings", []))

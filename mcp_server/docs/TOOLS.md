@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-01-13 20:31_
+_Generated: 2026-01-14 09:33_
 
 ---
 
@@ -64,28 +64,33 @@ IMPORTANT: For thin-shell problems (high α, high density contrast), provide phy
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `geometry` | `sphere_in_vacuum` | `ellipse_in_vacuum` | `cylinder_in_vacuum` | `shell_in_vacuum` | `two_spheres` | `sphere_near_wall` | `box_2d` | `box_3d` | `disk` | `sphere_domain` | `custom_2d` | `custom_3d` | Yes | Geometry template. Choose based on physical setup:
+| `geometry` | `sphere_in_vacuum` | `ellipse_in_vacuum` | `cylinder_in_vacuum` | `shell_in_vacuum` | `two_spheres` | `sphere_near_wall` | `sphere_in_profile` | `box_2d` | `box_3d` | `disk` | `sphere_domain` | `parallel_plates` | `custom_2d` | `custom_3d` | Yes | Geometry template. Choose based on physical setup:
 
 OBJECT-IN-VACUUM (screening/force calculations):
-- sphere_in_vacuum: Spherical source in vacuum. Regions: object, vacuum. Default symmetry: axial (2D). 'r' = spherical radius.
-- ellipse_in_vacuum: Oblate/prolate ellipsoid in vacuum. Regions: object, vacuum. Default symmetry: axial (2D). 'r' = cylindrical radius.
-- cylinder_in_vacuum: Cylindrical source in vacuum. Regions: cylinder, vacuum. Default symmetry: axial (2D). 'r' = cylindrical radius.
-- shell_in_vacuum: Hollow spherical shell in vacuum. Regions: shell, vacuum. Default symmetry: axial (2D). 'r' = spherical radius.
-- two_spheres: Two spheres for force calculations. Regions: sphere_1, sphere_2, vacuum. Default symmetry: axial (2D). 'r' = cylindrical radius.
-- sphere_near_wall: Sphere near planar wall. Regions: sphere, wall, vacuum. Default symmetry: axial (2D). 'r' = cylindrical radius.
+- sphere_in_vacuum: Spherical source in vacuum. Regions: object, vacuum. Fixed symmetry: axial (2D). 'r' = spherical radius.
+- ellipse_in_vacuum: Oblate/prolate ellipsoid in vacuum. Regions: object, vacuum. Fixed symmetry: axial (2D). 'r' = cylindrical radius.
+- cylinder_in_vacuum: Cylindrical source in vacuum. Regions: cylinder, vacuum. Fixed symmetry: axial (2D). 'r' = cylindrical radius.
+- shell_in_vacuum: Hollow spherical shell in vacuum. Regions: shell, vacuum. Fixed symmetry: axial (2D). 'r' = spherical radius.
+- two_spheres: Two spheres for force calculations. Regions: sphere_1, sphere_2, vacuum. Fixed symmetry: axial (2D). 'r' = cylindrical radius.
+- sphere_near_wall: Sphere near planar wall. Regions: sphere, wall, vacuum. Fixed symmetry: axial (2D). 'r' = cylindrical radius.
+- sphere_in_profile: Sphere in spatially-varying density profile (e.g., NFW, isothermal). Regions: sphere, background. Fixed symmetry: axial (2D). 'r' = spherical radius. Use center_z to offset sphere along z-axis.
 
 PLAIN DOMAINS (no interior object):
-- sphere_domain: For spherically-symmetric profiles (NFW, isothermal). Regions: domain. Default symmetry: axial (2D). 'r' = spherical radius.
-- disk: For cylindrically-symmetric profiles. Regions: domain. Default symmetry: axial (2D). 'r' = cylindrical radius.
-- box_2d: 2D Cartesian rectangle. Regions: domain. Default symmetry: none (2D Cartesian).
-- box_3d: 3D Cartesian box. Regions: domain. Default symmetry: none (3D).
+- sphere_domain: For spherically-symmetric profiles (NFW, isothermal). Regions: domain. Fixed symmetry: axial (2D). 'r' = spherical radius.
+- disk: For cylindrically-symmetric profiles. Regions: domain. Fixed symmetry: axial (2D). 'r' = cylindrical radius.
+- box_2d: 2D Cartesian rectangle. Regions: domain. Default symmetry: translation (2D).
+- box_3d: 3D Cartesian box. Regions: domain. Fixed symmetry: none (true 3D).
+- parallel_plates: Two parallel plates with vacuum gap. Regions: vacuum, plate. Fixed symmetry: translation (2D extended in y). 'x' = perpendicular to plates.
 
 CUSTOM SHAPES:
-- custom_2d: Arbitrary 2D shape from points. Points are [r, z] for axial symmetry, [x, y] for none. Regions: object, vacuum. Default symmetry: axial (2D). 'r' = cylindrical radius.
-- custom_3d: Arbitrary 3D shape from contours. Regions: object. Default symmetry: none (3D). |
+- custom_2d: Arbitrary 2D shape from points. Points are [r, z] for axial symmetry, [x, y] for translation. Regions: object, vacuum. Default symmetry: axial (2D). 'r' = cylindrical radius.
+- custom_3d: Arbitrary 3D shape from contours. Regions: object. Fixed symmetry: none (true 3D). |
 | `params` | object | Yes | Geometry-specific parameters. |
 | `mesh_quality` | `very_coarse` | `coarse` | `medium` | `fine` | `very_fine` | No | Mesh resolution. Default: `"medium"` |
-| `symmetry` | `axial` | `none` | No | Override default symmetry. |
+| `symmetry` | `axial` | `translation` | `none` | No | Override symmetry for geometries with 'Default symmetry'. Geometries with 'Fixed symmetry' ignore this parameter. SELCIE always solves 3D problems; 2D meshes are slices with implied symmetry:
+- axial: 2D mesh in (r,z) revolved around z-axis (axisymmetric).
+- translation: 2D mesh in (x,y) extended infinitely in z (translation-invariant).
+- none: Use geometry's default symmetry. |
 | `custom_id` | string | No | Custom mesh ID. |
 | `allow_large_mesh` | boolean | No | Allow meshes exceeding 200,000 cells. Default: false. Default: `False` |
 | `physics_params` | object | No | Physics parameters for automatic thin-shell mesh refinement. Option 1: Provide 'lambda' dict mapping region names to Compton wavelengths. Option 2: Provide 'alpha', 'density' dict, and 'n' - lambdas will be computed per region. The mesh will be refined near boundaries of dense regions to resolve thin shells. |
@@ -94,6 +99,8 @@ CUSTOM SHAPES:
 
 - **`object_radius`** (number): Radius of spherical source
 - **`vacuum_radius`** (number): Outer radius of vacuum region
+- **`domain_radius`** (number): Outer radius of domain (sphere_in_profile)
+- **`center_z`** (number): Z-position of sphere center (sphere_in_profile, default 0)
 - **`wall_thickness`** (number): Wall thickness (sphere_in_vacuum, sphere_near_wall)
 - **`rx`** (number): Semi-axis in r/x direction
 - **`ry`** (number): Semi-axis in z/y direction
@@ -111,6 +118,9 @@ CUSTOM SHAPES:
 - **`points`** (array[any]): Array of [r,z] points for custom_2d
 - **`shape_file`** (string): Path to file with shape points (custom_2d)
 - **`contour_file`** (string): Path to 3D contour file (custom_3d)
+- **`plate_separation`** (number): Gap between inner surfaces of plates (parallel_plates)
+- **`plate_thickness`** (number): Thickness of each plate (parallel_plates)
+- **`domain_height`** (number): Height of domain in y direction (parallel_plates, default=plate_separation)
 
 #### `physics_params` options
 

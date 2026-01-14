@@ -100,7 +100,7 @@ def _symmetry_to_selcie(symmetry: str) -> str:
     """Convert MCP symmetry to SELCIE DensityProfile symmetry string."""
     mapping = {
         "axial": "vertical axis-symmetry",
-        "none": "translation symmetry",
+        "translation": "translation symmetry",
     }
     return mapping.get(symmetry, symmetry)
 
