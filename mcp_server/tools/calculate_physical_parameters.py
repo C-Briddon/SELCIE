@@ -11,10 +11,15 @@ from typing import Any
 
 from mcp.types import Tool, TextContent
 
+from astropy import units
+
 from SELCIE.Misc import alpha_calculator_chameleon, conv_fifth_force_chameleon
 
 from utils.physics import M_PL_EV, calculate_lambda_hat, classify_regime
 from utils.units import get_astropy_density_unit, get_astropy_length_unit
+
+# Standard gravity in m/s^2
+G_STANDARD = 9.80665
 
 
 TOOL_DEFINITION = Tool(
@@ -26,8 +31,9 @@ TOOL_DEFINITION = Tool(
         "dimensionless Compton wavelength λ̂(ρ̂) = √(α/(n+1)) × ρ̂^{-(n+2)/(2(n+1))} at "
         "the density extremes. Since λ̂ is in units of L, compare to 1: λ̂ << 1 means adiabatic "
         "(field tracks ρ̂^{-1/(n+1)}), λ̂ >> 1 means field is set by boundaries, λ̂ ~ 1 is the "
-        "transition region where SELCIE is needed. Also returns a conversion factor to "
-        "translate dimensionless grad(φ) from the solver to physical fifth force in units of g."
+        "transition region where SELCIE is needed. Also returns conversion factors: "
+        "grad_to_acceleration_g converts dimensionless ∇φ to acceleration in units of g; "
+        "mass_scale_kg and force_scale_N convert integrate mode outputs to physical mass (kg) and force (N)."
     ),
     inputSchema={
         "type": "object",
@@ -171,12 +177,42 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
             p0_NonEVUnits=rho_unit, L_NonEVUnits=L_unit
         )
 
+    # Calculate mass and force scales in SI units
+    # Convert rho_0 to kg/m^3 and L to m for SI output
+    if rho_0_units == "eV^4":
+        # eV^4 to kg/m^3: complex conversion via natural units
+        # ρ [kg/m³] = ρ [eV⁴] × (eV/c²)/(ℏc)³
+        # Using: 1 eV⁴ ≈ 1.324e-73 kg/m³ (from constants)
+        eV4_to_kg_m3 = 1.324e-73
+        rho_0_si = rho_0 * eV4_to_kg_m3
+    elif rho_0_units == "GeV^4":
+        eV4_to_kg_m3 = 1.324e-73
+        rho_0_si = rho_0 * 1e36 * eV4_to_kg_m3
+    else:
+        rho_0_si = (rho_0 * rho_unit).to(units.kg / units.m**3).value
+
+    L_si = (L * L_unit).to(units.m).value
+
+    # Mass scale: M_physical = mass_scale × mass_rescaled [kg]
+    mass_scale = rho_0_si * L_si**3
+
+    # Force scale: F_physical = force_scale × force_rescaled [N]
+    # This is ρ₀ × L³ × g × conv_fifth_force_chameleon
+    force_scale = mass_scale * G_STANDARD * force_conversion
+
     # Build result
     result: dict[str, Any] = {
         "alpha": alpha,
         "n": n,
-        "force_conversion_to_g": force_conversion,
-        "force_conversion_note": "Multiply dimensionless grad(phi) by this to get fifth force in units of g (9.80665 m/s^2)",
+        "grad_to_acceleration_g": force_conversion,
+        "grad_to_acceleration_note": "Multiply dimensionless grad(phi) by this to get acceleration in units of g (9.81 m/s²)",
+        "mass_scale_kg": mass_scale,
+        "force_scale_N": force_scale,
+        "integral_scaling_note": (
+            "For evaluate(..., mode='integrate'): "
+            "M_physical[kg] = mass_scale_kg × mass, "
+            "F_physical[N] = force_scale_N × force"
+        ),
     }
 
     # If rho_max/rho_min not provided, return formulas

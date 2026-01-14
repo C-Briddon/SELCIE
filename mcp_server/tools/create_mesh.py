@@ -497,21 +497,30 @@ def _create_parallel_plates(
     """Create parallel plates with vacuum gap.
 
     Creates two parallel plates separated by a vacuum region.
-    Uses translation symmetry (symmetry="none") - the 2D mesh
-    extends via translation in the y direction.
+    Uses translation symmetry - the 2D mesh extends via translation in y.
 
     Layout (in x-y plane):
-        [plate_L] [vacuum] [plate_R]
-        x: 0 to plate_thickness | plate_thickness to plate_thickness+separation | ...
+        [plate] [vacuum] [plate]
+        x: 0 to t | t to t+sep | t+sep to 2t+sep
+        where t = plate_thickness, sep = plate_separation
+
+    Note: Both plates share the same region marker. For different plate
+    densities, use position-dependent expressions.
     """
     plate_separation = params["plate_separation"]
     plate_thickness = params["plate_thickness"]
     domain_height = params.get("domain_height", plate_separation)
 
     total_width = 2 * plate_thickness + plate_separation
+    dist_max = quality["dist_max_factor"] * plate_separation
+
+    # Cell sizes for plates and vacuum
+    cell_min_plate = quality["cell_min_factor"] * plate_thickness
+    cell_max_plate = quality["cell_max_factor"] * plate_separation
+    cell_min_vac = quality["cell_min_factor"] * plate_separation
+    cell_max_vac = quality["cell_max_factor"] * plate_separation
 
     # Create vacuum region first (inner)
-    # Centered in x, full height in y
     vac_x_min = plate_thickness
     vac_x_max = plate_thickness + plate_separation
     vacuum = MT.points_to_surface([
@@ -520,29 +529,18 @@ def _create_parallel_plates(
         (vac_x_max, domain_height, 0),
         (vac_x_min, domain_height, 0),
     ])
-
-    # Subdomain for vacuum - finer near plate boundaries
-    cell_min_vac = quality["cell_min_factor"] * plate_separation
-    cell_max_vac = quality["cell_max_factor"] * plate_separation
-    dist_max = quality["dist_max_factor"] * plate_separation
     MT.create_subdomain(CellSizeMin=cell_min_vac, CellSizeMax=cell_max_vac, DistMax=dist_max)
 
-    # Create full domain (outer) embedding vacuum
+    # Create full domain embedding vacuum (plates are the outer region)
     MT.points_to_surface([
         (0, 0, 0),
         (total_width, 0, 0),
         (total_width, domain_height, 0),
         (0, domain_height, 0),
     ], embed=vacuum)
-
-    # Subdomain for plates
-    # cell_min based on plate_thickness to resolve boundary
-    # cell_max based on plate_separation so cells can grow large
-    cell_min_plate = quality["cell_min_factor"] * plate_thickness
-    cell_max_plate = quality["cell_max_factor"] * plate_separation
     MT.create_subdomain(CellSizeMin=cell_min_plate, CellSizeMax=cell_max_plate, DistMax=dist_max)
 
-    # Regions in creation order: vacuum first, then plate
+    # Regions: vacuum first, then plate (both plates share same marker)
     regions = ["vacuum", "plate"]
     bounds = {
         "x_min": 0,

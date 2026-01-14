@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-01-14 09:33_
+_Generated: 2026-01-14 16:27_
 
 ---
 
@@ -21,7 +21,7 @@ _Generated: 2026-01-14 09:33_
 
 ## calculate_physical_parameters
 
-Convert physical chameleon parameters to SELCIE's dimensionless α and assess the screening regime using the Compton wavelength criterion. Use this first to determine if SELCIE is needed or if analytic solutions suffice. Returns the dimensionless Compton wavelength λ̂(ρ̂) = √(α/(n+1)) × ρ̂^{-(n+2)/(2(n+1))} at the density extremes. Since λ̂ is in units of L, compare to 1: λ̂ << 1 means adiabatic (field tracks ρ̂^{-1/(n+1)}), λ̂ >> 1 means field is set by boundaries, λ̂ ~ 1 is the transition region where SELCIE is needed. Also returns a conversion factor to translate dimensionless grad(φ) from the solver to physical fifth force in units of g.
+Convert physical chameleon parameters to SELCIE's dimensionless α and assess the screening regime using the Compton wavelength criterion. Use this first to determine if SELCIE is needed or if analytic solutions suffice. Returns the dimensionless Compton wavelength λ̂(ρ̂) = √(α/(n+1)) × ρ̂^{-(n+2)/(2(n+1))} at the density extremes. Since λ̂ is in units of L, compare to 1: λ̂ << 1 means adiabatic (field tracks ρ̂^{-1/(n+1)}), λ̂ >> 1 means field is set by boundaries, λ̂ ~ 1 is the transition region where SELCIE is needed. Also returns conversion factors: grad_to_acceleration_g converts dimensionless ∇φ to acceleration in units of g; mass_scale_kg and force_scale_N convert integrate mode outputs to physical mass (kg) and force (N).
 
 ### Parameters
 
@@ -141,21 +141,25 @@ Modes:
 - points: Evaluate at specific coordinates
 - grid: Sample on regular 2D grid
 - max_in_region: Find max/min values within a region, with optional minimum distance from other region(s). Use min_distance_from='all' to exclude points near any other domain boundary.
+- integrate: Compute volume integrals over a region. Returns total force, mass, volume. Essential for torsion balance experiments, Casimir force measurements, and any extended object where thin-shell effects matter.
 
-Quantities:
+Quantities (for point-based modes):
 - field: Chameleon field φ
-- gradient_magnitude: |∇φ| (dimensionless). Multiply by force_conversion_to_g from calculate_physical_parameters to get fifth force acceleration in units of g.
-- fifth_force_g: Alias for gradient_magnitude (returns gradient_magnitude)
+- gradient_magnitude: |∇φ| (dimensionless). Multiply by grad_to_acceleration_g from calculate_physical_parameters to get acceleration in units of g.
 - density: ρ̂ at evaluation points (if available)
 - adiabatic_field: ρ̂^{-1/(n+1)} for comparison
 - field_deviation: (φ - φ_adiabatic) / φ_adiabatic
+
+Quantities (for integrate mode) - all in rescaled (dimensionless) units:
+- force: Total force F = ∫ρ̂∇φ̂ dV̂ on region (includes symmetry Jacobian). Multiply by force_scale_N from calculate_physical_parameters to get Newtons.
+- mass: Total mass M = ∫ρ̂ dV̂. Multiply by mass_scale_kg from calculate_physical_parameters to get kg.
 
 ### Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `solution_id` | string | Yes | ID of the solution to evaluate |
-| `mode` | `radial` | `line` | `points` | `grid` | `max_in_region` | Yes | Evaluation mode |
+| `mode` | `radial` | `line` | `points` | `grid` | `max_in_region` | `integrate` | Yes | Evaluation mode |
 | `params` | object | No | Mode-specific parameters |
 | `quantities` | array[string] | No | Quantities to compute. Default: ['field', 'gradient_magnitude'] |
 
@@ -173,7 +177,8 @@ Quantities:
 - **`z_range`** (array[any]): [z_min, z_max] (grid)
 - **`n_r`** (integer): Number of r points (grid)
 - **`n_z`** (integer): Number of z points (grid)
-- **`region`** (string): Region to sample (max_in_region). Default: vacuum
+- **`region`** (string): Region name (max_in_region, integrate). Default: vacuum
+- **`quantity`** (`force` | `mass`): Quantity to integrate (integrate mode). Default: force
 - **`min_distance_from`** (string | array[string]): Region(s) to keep distance from (max_in_region). Can be: a region name, 'all' for all other regions, or a list of region names
 - **`min_distance`** (number): Minimum distance from boundary of exclusion region(s) (max_in_region)
 - **`n_samples`** (integer): Number of random samples (max_in_region). Default: 1000

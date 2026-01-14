@@ -21,14 +21,18 @@ Modes:
 - points: Evaluate at specific coordinates
 - grid: Sample on regular 2D grid
 - max_in_region: Find max/min values within a region, with optional minimum distance from other region(s). Use min_distance_from='all' to exclude points near any other domain boundary.
+- integrate: Compute volume integrals over a region. Returns total force, mass, volume. Essential for torsion balance experiments, Casimir force measurements, and any extended object where thin-shell effects matter.
 
-Quantities:
+Quantities (for point-based modes):
 - field: Chameleon field φ
-- gradient_magnitude: |∇φ| (dimensionless). Multiply by force_conversion_to_g from calculate_physical_parameters to get fifth force acceleration in units of g.
-- fifth_force_g: Alias for gradient_magnitude (returns gradient_magnitude)
+- gradient_magnitude: |∇φ| (dimensionless). Multiply by grad_to_acceleration_g from calculate_physical_parameters to get acceleration in units of g.
 - density: ρ̂ at evaluation points (if available)
 - adiabatic_field: ρ̂^{-1/(n+1)} for comparison
 - field_deviation: (φ - φ_adiabatic) / φ_adiabatic
+
+Quantities (for integrate mode) - all in rescaled (dimensionless) units:
+- force: Total force F = ∫ρ̂∇φ̂ dV̂ on region (includes symmetry Jacobian). Multiply by force_scale_N from calculate_physical_parameters to get Newtons.
+- mass: Total mass M = ∫ρ̂ dV̂. Multiply by mass_scale_kg from calculate_physical_parameters to get kg.
 """,
     inputSchema={
         "type": "object",
@@ -39,7 +43,7 @@ Quantities:
             },
             "mode": {
                 "type": "string",
-                "enum": ["radial", "line", "points", "grid", "max_in_region"],
+                "enum": ["radial", "line", "points", "grid", "max_in_region", "integrate"],
                 "description": "Evaluation mode"
             },
             "params": {
@@ -58,7 +62,8 @@ Quantities:
                     "z_range": {"type": "array", "description": "[z_min, z_max] (grid)"},
                     "n_r": {"type": "integer", "description": "Number of r points (grid)"},
                     "n_z": {"type": "integer", "description": "Number of z points (grid)"},
-                    "region": {"type": "string", "description": "Region to sample (max_in_region). Default: vacuum"},
+                    "region": {"type": "string", "description": "Region name (max_in_region, integrate). Default: vacuum"},
+                    "quantity": {"type": "string", "enum": ["force", "mass"], "description": "Quantity to integrate (integrate mode). Default: force"},
                     "min_distance_from": {
                         "oneOf": [
                             {"type": "string"},
@@ -141,12 +146,6 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
         mode = arguments["mode"]
         params = arguments.get("params", {})
         quantities = arguments.get("quantities", ["field", "gradient_magnitude"])
-
-        # Normalize: fifth_force_g is an alias for gradient_magnitude
-        if "fifth_force_g" in quantities:
-            quantities = [q for q in quantities if q != "fifth_force_g"]
-            if "gradient_magnitude" not in quantities:
-                quantities.append("gradient_magnitude")
 
         # Get session and solution info
         session = get_session()
@@ -281,6 +280,10 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
         elif mode == "max_in_region":
             return await _handle_max_in_region(
                 arguments, mesh, field, field_grad, mesh_info, solution_info, mesh_bounds
+            )
+        elif mode == "integrate":
+            return await _handle_integrate(
+                arguments, mesh, field, mesh_info, solution_info
             )
         else:
             return [TextContent(type="text", text=json.dumps({
@@ -424,12 +427,6 @@ async def _handle_max_in_region(
 
     params = arguments.get("params", {})
     quantities = arguments.get("quantities", ["field", "gradient_magnitude"])
-
-    # Normalize: fifth_force_g is an alias for gradient_magnitude
-    if "fifth_force_g" in quantities:
-        quantities = [q for q in quantities if q != "fifth_force_g"]
-        if "gradient_magnitude" not in quantities:
-            quantities.append("gradient_magnitude")
 
     region = params.get("region", "vacuum")
     min_distance_from = params.get("min_distance_from")
@@ -602,5 +599,147 @@ async def _handle_max_in_region(
         "n_valid_samples": n_valid,
         "data": data
     }
+
+    return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+
+async def _handle_integrate(
+    arguments: dict[str, Any],
+    mesh,
+    field,
+    mesh_info,
+    solution_info,
+) -> list[TextContent]:
+    """Handle integrate mode - compute volume integrals over a region.
+
+    Computes total force F = ∫ρ∇φ dV and mass M = ∫ρ dV over a named region.
+    Handles symmetry correctly:
+    - axial: includes 2πr Jacobian for revolution
+    - translation: result is per unit length in z
+    """
+    import dolfin as d
+    from math import pi, sqrt
+
+    params = arguments.get("params", {})
+    region = params.get("region", "vacuum")
+    quantity = params.get("quantity", "force")
+
+    # Validate quantity
+    if quantity not in ["force", "mass"]:
+        return [TextContent(type="text", text=json.dumps({
+            "error": {
+                "code": "INVALID_QUANTITY",
+                "message": f"Invalid quantity '{quantity}'. Must be 'force' or 'mass'."
+            }
+        }, indent=2))]
+
+    # Get region marker
+    regions = mesh_info.regions
+    if region not in regions:
+        return [TextContent(type="text", text=json.dumps({
+            "error": {
+                "code": "INVALID_REGION",
+                "message": f"Region '{region}' not found. Available: {list(regions.keys())}"
+            }
+        }, indent=2))]
+
+    target_marker = regions[region]
+
+    # Load subdomain markers
+    mesh_path = mesh_info.mesh_path
+    subdomains_file = os.path.join(mesh_path, "mesh.xdmf")
+
+    mvc = d.MeshValueCollection("size_t", mesh, mesh.topology().dim())
+    with d.XDMFFile(subdomains_file) as f:
+        f.read(mvc, "Subdomain")
+    subdomains = d.MeshFunction("size_t", mesh, mvc)
+
+    # Load density function
+    mesh_dir = os.path.dirname(mesh_path)
+    root_dir = os.path.dirname(mesh_dir)
+    solution_path = os.path.join(root_dir, "Saved Solutions", arguments["solution_id"])
+    density_file = os.path.join(solution_path, "density.h5")
+
+    if not os.path.exists(density_file):
+        return [TextContent(type="text", text=json.dumps({
+            "error": {
+                "code": "DENSITY_NOT_FOUND",
+                "message": "Density not saved with this solution. Re-solve to generate density field."
+            }
+        }, indent=2))]
+
+    # Load density (DG0 space)
+    V_dg = d.FunctionSpace(mesh, "DG", 0)
+    density = d.Function(V_dg)
+    with d.HDF5File(mesh.mpi_comm(), density_file, "r") as f:
+        f.read(density, "density")
+
+    # Get symmetry from solution info
+    symmetry = getattr(solution_info, 'symmetry', 'axial')
+
+    # Create measure restricted to target region
+    dx_region = d.Measure("dx", domain=mesh, subdomain_data=subdomains, subdomain_id=target_marker)
+
+    # Spatial coordinates for Jacobian
+    x = d.SpatialCoordinate(mesh)
+
+    # Set up Jacobian based on symmetry
+    if symmetry == "axial":
+        # Axisymmetric: include 2πr factor
+        r = x[0]
+        jacobian = 2 * pi * r
+        coord_names = ("r", "z")
+    else:
+        # Translation or 3D: no extra factor (result is per unit length for translation)
+        jacobian = d.Constant(1.0)
+        coord_names = ("x", "y")
+
+    # Compute integrals
+    result_data = {}
+
+    # Volume integral (with Jacobian)
+    volume = d.assemble(jacobian * d.Constant(1.0) * dx_region)
+    result_data["volume"] = float(volume)
+
+    # Mass integral: M = ∫ρ dV
+    mass = d.assemble(jacobian * density * dx_region)
+    result_data["mass"] = float(mass)
+
+    if quantity == "force":
+        # Force integral: F = ∫ρ∇φ dV
+        grad_phi = d.grad(field)
+
+        # Integrate each component
+        F_0 = d.assemble(jacobian * density * grad_phi[0] * dx_region)
+        F_1 = d.assemble(jacobian * density * grad_phi[1] * dx_region)
+
+        F_magnitude = sqrt(float(F_0)**2 + float(F_1)**2)
+
+        result_data[f"F_{coord_names[0]}"] = float(F_0)
+        result_data[f"F_{coord_names[1]}"] = float(F_1)
+        result_data["F_magnitude"] = F_magnitude
+
+    # Count cells in region for sanity check
+    n_cells = sum(1 for cell in d.cells(mesh) if subdomains[cell] == target_marker)
+    result_data["n_cells"] = n_cells
+
+    result = {
+        "solution_id": arguments["solution_id"],
+        "mode": "integrate",
+        "quantity": quantity,
+        "region": region,
+        "symmetry": symmetry,
+        "data": result_data,
+        "scaling": {
+            "description": "Values are in rescaled (dimensionless) units.",
+            "mass_physical": "M_physical[kg] = mass_scale_kg × mass",
+            "force_physical": "F_physical[N] = force_scale_N × force",
+            "note": "Use calculate_physical_parameters tool to get mass_scale_kg and force_scale_N."
+        }
+    }
+
+    # Add note about units for translation symmetry
+    if symmetry == "translation":
+        result["scaling"]["symmetry_note"] = "For translation symmetry, values are per unit length in z."
 
     return [TextContent(type="text", text=json.dumps(result, indent=2))]

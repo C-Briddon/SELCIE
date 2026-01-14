@@ -551,6 +551,7 @@ class TestCreateMeshParallelPlates:
         assert data["dimension"] == 2
         assert "vacuum" in data["regions"]
         assert "plate" in data["regions"]
+        # Region indices follow creation order
         assert data["regions"]["vacuum"] == 0
         assert data["regions"]["plate"] == 1
 

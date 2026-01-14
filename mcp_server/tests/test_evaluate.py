@@ -399,6 +399,104 @@ class TestEvaluate:
         field_values = data["data"]["field"]
         assert any(math.isnan(v) if isinstance(v, float) else False for v in field_values)
 
+    @pytest.mark.asyncio
+    async def test_integrate_force_on_object(self, solution_id):
+        """Test integrate mode for force on object region."""
+        from tools.evaluate import handle
+
+        result = await handle({
+            "solution_id": solution_id,
+            "mode": "integrate",
+            "params": {
+                "region": "object",
+                "quantity": "force",
+            },
+        })
+
+        data = json.loads(result[0].text)
+
+        assert "error" not in data
+        assert data["mode"] == "integrate"
+        assert data["quantity"] == "force"
+        assert data["region"] == "object"
+        assert data["symmetry"] == "axial"
+
+        # Check force components are present
+        assert "F_r" in data["data"]
+        assert "F_z" in data["data"]
+        assert "F_magnitude" in data["data"]
+
+        # Check sanity outputs
+        assert "mass" in data["data"]
+        assert "volume" in data["data"]
+        assert "n_cells" in data["data"]
+
+        # Mass should be positive and significant (object density is 1e6)
+        assert data["data"]["mass"] > 0
+        assert data["data"]["volume"] > 0
+        assert data["data"]["n_cells"] > 0
+
+    @pytest.mark.asyncio
+    async def test_integrate_mass_only(self, solution_id):
+        """Test integrate mode for mass only."""
+        from tools.evaluate import handle
+
+        result = await handle({
+            "solution_id": solution_id,
+            "mode": "integrate",
+            "params": {
+                "region": "object",
+                "quantity": "mass",
+            },
+        })
+
+        data = json.loads(result[0].text)
+
+        assert "error" not in data
+        assert data["quantity"] == "mass"
+
+        # Should have mass and volume but not force
+        assert "mass" in data["data"]
+        assert "volume" in data["data"]
+        assert "F_r" not in data["data"]
+        assert "F_z" not in data["data"]
+
+    @pytest.mark.asyncio
+    async def test_integrate_invalid_region(self, solution_id):
+        """Test integrate mode with invalid region."""
+        from tools.evaluate import handle
+
+        result = await handle({
+            "solution_id": solution_id,
+            "mode": "integrate",
+            "params": {
+                "region": "nonexistent",
+                "quantity": "force",
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "INVALID_REGION"
+
+    @pytest.mark.asyncio
+    async def test_integrate_invalid_quantity(self, solution_id):
+        """Test integrate mode with invalid quantity."""
+        from tools.evaluate import handle
+
+        result = await handle({
+            "solution_id": solution_id,
+            "mode": "integrate",
+            "params": {
+                "region": "object",
+                "quantity": "invalid",
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "INVALID_QUANTITY"
+
 
 class TestEvaluateHelpers:
     """Test evaluate helper functions."""
