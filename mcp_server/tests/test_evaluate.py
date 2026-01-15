@@ -37,7 +37,7 @@ class TestEvaluate:
             "geometry": "sphere_in_vacuum",
             "params": {
                 "object_radius": 0.15,
-                "vacuum_radius": 1.0,
+                "domain_radius": 1.0,
             },
             "mesh_quality": "very_coarse",
         })

@@ -35,7 +35,7 @@ class TestPlot:
             "geometry": "sphere_in_vacuum",
             "params": {
                 "object_radius": 0.15,
-                "vacuum_radius": 1.0,
+                "domain_radius": 1.0,
             },
             "mesh_quality": "very_coarse",
         })
@@ -198,7 +198,7 @@ class TestPlotComparison:
             "geometry": "sphere_in_vacuum",
             "params": {
                 "object_radius": 0.15,
-                "vacuum_radius": 1.0,
+                "domain_radius": 1.0,
             },
             "mesh_quality": "very_coarse",
         })
@@ -256,7 +256,7 @@ class TestPlotComparison:
         # Create single solution
         mesh_result = await create_mesh({
             "geometry": "sphere_in_vacuum",
-            "params": {"object_radius": 0.15, "vacuum_radius": 1.0},
+            "params": {"object_radius": 0.15, "domain_radius": 1.0},
             "mesh_quality": "very_coarse",
         })
         mesh_data = json.loads(mesh_result[0].text)

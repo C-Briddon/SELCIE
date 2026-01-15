@@ -109,8 +109,6 @@ async def create_and_plot_mesh(geometry_config, output_dir):
         "params": geometry_config["params"],
         "mesh_quality": "coarse" if is_3d else "medium",
     }
-    if "symmetry" in geometry_config:
-        args["symmetry"] = geometry_config["symmetry"]
     if "physics_params" in geometry_config:
         args["physics_params"] = geometry_config["physics_params"]
 
@@ -157,80 +155,80 @@ async def main():
         # Object-in-vacuum templates
         {
             "geometry": "sphere_in_vacuum",
-            "params": {"object_radius": 0.15, "vacuum_radius": 1.0},
+            "params": {"object_radius": 0.15, "domain_radius": 1.0},
         },
         {
             "geometry": "ellipse_in_vacuum",
-            "params": {"rx": 0.2, "ry": 0.1, "vacuum_radius": 1.0},
+            "params": {"rx": 0.2, "ry": 0.1, "domain_radius": 1.0},
         },
         {
             "geometry": "shell_in_vacuum",
-            "params": {"inner_radius": 0.1, "outer_radius": 0.2, "vacuum_radius": 1.0},
+            "params": {"inner_radius": 0.1, "outer_radius": 0.2, "domain_radius": 1.0},
         },
-        # Shell with larger vacuum radius (tests cell scaling fix)
+        # Shell with larger domain radius (tests cell scaling fix)
         {
             "geometry": "shell_in_vacuum",
             "name": "shell_in_vacuum_r5",
-            "params": {"inner_radius": 0.1, "outer_radius": 0.2, "vacuum_radius": 5.0},
+            "params": {"inner_radius": 0.1, "outer_radius": 0.2, "domain_radius": 5.0},
         },
         {
             "geometry": "shell_in_vacuum",
             "name": "shell_in_vacuum_r10",
-            "params": {"inner_radius": 0.1, "outer_radius": 0.2, "vacuum_radius": 10.0},
+            "params": {"inner_radius": 0.1, "outer_radius": 0.2, "domain_radius": 10.0},
         },
-        # Thin shell with large vacuum (the problematic case)
+        # Thin shell with large domain (the problematic case)
         {
             "geometry": "shell_in_vacuum",
             "name": "shell_thin_r10",
-            "params": {"inner_radius": 0.96, "outer_radius": 1.0, "vacuum_radius": 10.0},
+            "params": {"inner_radius": 0.96, "outer_radius": 1.0, "domain_radius": 10.0},
         },
         {
             "geometry": "cylinder_in_vacuum",
-            "params": {"radius": 0.15, "height": 0.4, "vacuum_radius": 1.0},
+            "params": {"object_radius": 0.15, "object_height": 0.4, "domain_radius": 1.0},
         },
-        # Large vacuum radius tests (verify cell scaling fix for all geometries)
+        # Large domain radius tests (verify cell scaling fix for all geometries)
         {
             "geometry": "sphere_in_vacuum",
             "name": "sphere_in_vacuum_r10",
-            "params": {"object_radius": 0.15, "vacuum_radius": 10.0},
+            "params": {"object_radius": 0.15, "domain_radius": 10.0},
         },
         {
             "geometry": "ellipse_in_vacuum",
             "name": "ellipse_in_vacuum_r10",
-            "params": {"rx": 0.2, "ry": 0.1, "vacuum_radius": 10.0},
+            "params": {"rx": 0.2, "ry": 0.1, "domain_radius": 10.0},
         },
         {
             "geometry": "cylinder_in_vacuum",
             "name": "cylinder_in_vacuum_r10",
-            "params": {"radius": 0.15, "height": 0.4, "vacuum_radius": 10.0},
+            "params": {"object_radius": 0.15, "object_height": 0.4, "domain_radius": 10.0},
         },
         {
             "geometry": "two_spheres",
             "name": "two_spheres_r10",
-            "params": {"radius_1": 0.12, "radius_2": 0.08, "separation": 0.5, "vacuum_radius": 10.0},
+            "params": {"radius_1": 0.12, "radius_2": 0.08, "separation": 0.5, "domain_radius": 10.0},
         },
         {
             "geometry": "sphere_near_wall",
             "name": "sphere_near_wall_r10",
-            "params": {"object_radius": 0.1, "wall_distance": 0.15, "wall_thickness": 0.1, "vacuum_radius": 10.0},
+            "params": {"object_radius": 0.1, "wall_distance": 0.15, "wall_thickness": 0.1, "domain_radius": 10.0},
         },
         {
-            "geometry": "custom_2d",
+            "geometry": "custom_2d_axial",
             "name": "custom_hexagon_r10",
             "params": {
                 "points": [
                     [0.0, 0.2], [0.173, 0.1], [0.173, -0.1], [0.0, -0.2],
                 ],
-                "vacuum_radius": 10.0,
+                "domain_radius": 10.0,
             },
         },
         {
             "geometry": "two_spheres",
-            "params": {"radius_1": 0.12, "radius_2": 0.08, "separation": 0.5, "vacuum_radius": 1.0},
+            "params": {"radius_1": 0.12, "radius_2": 0.08, "separation": 0.5, "domain_radius": 1.0},
         },
         {
             "geometry": "sphere_near_wall",
-            "params": {"object_radius": 0.1, "wall_distance": 0.15, "wall_thickness": 0.1, "vacuum_radius": 1.0},
+            "params": {"object_radius": 0.1, "wall_distance": 0.15, "wall_thickness": 0.1, "domain_radius": 1.0},
         },
         # Sphere in density profile (for astrophysical scenarios)
         {
@@ -245,21 +243,19 @@ async def main():
         # Plain domain templates
         {
             "geometry": "sphere_domain",
-            "params": {"radius": 1.0},
+            "params": {"domain_radius": 1.0},
         },
         {
             "geometry": "disk",
-            "params": {"radius": 1.0},
+            "params": {"domain_radius": 1.0},
         },
         {
             "geometry": "box_2d",
-            "params": {"width": 2.0, "height": 1.5},
-            "symmetry": "none",
+            "params": {"domain_width": 2.0, "domain_height": 1.5},
         },
         {
             "geometry": "box_3d",
-            "params": {"width": 2.0, "height": 1.5, "depth": 1.0},
-            "symmetry": "none",
+            "params": {"domain_width": 2.0, "domain_height": 1.5, "domain_depth": 1.0},
         },
         # Parallel plates (translation symmetry)
         {
@@ -273,7 +269,7 @@ async def main():
         },
         # Custom shapes
         {
-            "geometry": "custom_2d",
+            "geometry": "custom_2d_axial",
             "name": "custom_star",
             "params": {
                 # Axisymmetric star: only r >= 0 points (revolves to create 3D star-like shape)
@@ -282,41 +278,41 @@ async def main():
                     [0.095, 0.0], [0.154, -0.077], [0.059, -0.081],
                     [0.0, -0.25],
                 ],
-                "vacuum_radius": 1.0,
+                "domain_radius": 1.0,
             },
         },
         {
-            "geometry": "custom_2d",
+            "geometry": "custom_2d_axial",
             "name": "custom_hexagon",
             "params": {
                 # Axisymmetric half-hexagon: only r >= 0 points
                 "points": [
                     [0.0, 0.2], [0.173, 0.1], [0.173, -0.1], [0.0, -0.2],
                 ],
-                "vacuum_radius": 1.0,
+                "domain_radius": 1.0,
             },
         },
         # Physics-aware refinement examples
         {
             "geometry": "sphere_in_vacuum",
             "name": "sphere_thin_shell",
-            "params": {"object_radius": 0.15, "vacuum_radius": 1.0},
+            "params": {"object_radius": 0.15, "domain_radius": 1.0},
             "physics_params": {"lambda": {"object": 0.01}},
         },
         {
             "geometry": "sphere_in_vacuum",
             "name": "sphere_very_thin_shell",
-            "params": {"object_radius": 0.15, "vacuum_radius": 1.0},
+            "params": {"object_radius": 0.15, "domain_radius": 1.0},
             "physics_params": {"lambda": {"object": 0.002}},
         },
         {
             "geometry": "two_spheres",
             "name": "two_spheres_thin_shell",
-            "params": {"radius_1": 0.12, "radius_2": 0.08, "separation": 0.5, "vacuum_radius": 1.0},
+            "params": {"radius_1": 0.12, "radius_2": 0.08, "separation": 0.5, "domain_radius": 1.0},
             "physics_params": {"lambda": {"sphere_1": 0.005, "sphere_2": 0.005}},
         },
         {
-            "geometry": "custom_2d",
+            "geometry": "custom_2d_axial",
             "name": "custom_star_thin_shell",
             "params": {
                 # Axisymmetric star: only r >= 0 points
@@ -325,35 +321,21 @@ async def main():
                     [0.095, 0.0], [0.154, -0.077], [0.059, -0.081],
                     [0.0, -0.25],
                 ],
-                "vacuum_radius": 1.0,
+                "domain_radius": 1.0,
             },
             "physics_params": {"lambda": {"object": 0.01}},
         },
-        # Test cases for symmetry handling
+        # Test case for translation symmetry
         {
-            "geometry": "custom_2d",
-            "name": "custom_2d_axial_filtered",
-            "params": {
-                # Full star with x < 0 points - these get filtered in axial mode
-                "points": [
-                    [0.25, 0.0], [0.077, 0.154], [-0.077, 0.154],
-                    [-0.25, 0.0], [-0.077, -0.154], [0.077, -0.154],
-                ],
-                "vacuum_radius": 1.0,
-            },
-            # Default symmetry="axial" - x < 0 points will be filtered
-        },
-        {
-            "geometry": "custom_2d",
+            "geometry": "custom_2d_translation",
             "name": "custom_2d_translation",
-            "symmetry": "translation",
             "params": {
                 # Full hexagon - all points kept with translation symmetry (extruded in z)
                 "points": [
                     [0.2, 0.0], [0.1, 0.173], [-0.1, 0.173],
                     [-0.2, 0.0], [-0.1, -0.173], [0.1, -0.173],
                 ],
-                "vacuum_radius": 1.0,
+                "domain_radius": 1.0,
             },
         },
     ]

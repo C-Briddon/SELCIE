@@ -30,7 +30,7 @@ class TestPlotMesh:
         # First create a mesh
         await create_mesh({
             "geometry": "sphere_in_vacuum",
-            "params": {"object_radius": 0.1, "vacuum_radius": 1.0},
+            "params": {"object_radius": 0.1, "domain_radius": 1.0},
             "mesh_quality": "coarse",
         })
 
@@ -73,7 +73,7 @@ class TestPlotMesh:
         # Create a mesh
         await create_mesh({
             "geometry": "sphere_in_vacuum",
-            "params": {"object_radius": 0.1, "vacuum_radius": 1.0},
+            "params": {"object_radius": 0.1, "domain_radius": 1.0},
             "mesh_quality": "coarse",
         })
 
@@ -103,7 +103,7 @@ class TestPlotMesh:
 
         await create_mesh({
             "geometry": "ellipse_in_vacuum",
-            "params": {"rx": 0.2, "ry": 0.1, "vacuum_radius": 1.0},
+            "params": {"rx": 0.2, "ry": 0.1, "domain_radius": 1.0},
             "mesh_quality": "coarse",
         })
 

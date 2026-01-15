@@ -29,7 +29,7 @@ class TestCreateMeshSphereInVacuum:
             "geometry": "sphere_in_vacuum",
             "params": {
                 "object_radius": 0.1,
-                "vacuum_radius": 1.0,
+                "domain_radius": 1.0,
             },
             "mesh_quality": "coarse",
         })
@@ -54,7 +54,7 @@ class TestCreateMeshSphereInVacuum:
             "geometry": "sphere_in_vacuum",
             "params": {
                 "object_radius": 0.1,
-                # missing vacuum_radius
+                # missing domain_radius
             },
         })
 
@@ -71,7 +71,7 @@ class TestCreateMeshSphereInVacuum:
             "geometry": "sphere_in_vacuum",
             "params": {
                 "object_radius": 0.1,
-                "vacuum_radius": 1.0,
+                "domain_radius": 1.0,
             },
             "custom_id": "my_mesh",
         })
@@ -87,14 +87,14 @@ class TestCreateMeshSphereInVacuum:
         # First mesh
         await handle({
             "geometry": "sphere_in_vacuum",
-            "params": {"object_radius": 0.1, "vacuum_radius": 1.0},
+            "params": {"object_radius": 0.1, "domain_radius": 1.0},
             "custom_id": "duplicate",
         })
 
         # Second mesh with same ID
         result = await handle({
             "geometry": "sphere_in_vacuum",
-            "params": {"object_radius": 0.2, "vacuum_radius": 2.0},
+            "params": {"object_radius": 0.2, "domain_radius": 2.0},
             "custom_id": "duplicate",
         })
 
@@ -120,7 +120,7 @@ class TestCreateMeshEllipse:
             "params": {
                 "rx": 0.1,
                 "ry": 0.05,  # flattened in z
-                "vacuum_radius": 1.0,
+                "domain_radius": 1.0,
             },
             "mesh_quality": "coarse",
         })
@@ -144,7 +144,7 @@ class TestCreateMeshDisk:
 
         result = await handle({
             "geometry": "disk",
-            "params": {"radius": 1.0},
+            "params": {"domain_radius": 1.0},
             "mesh_quality": "coarse",
         })
 
@@ -168,7 +168,7 @@ class TestCreateMeshBox2D:
 
         result = await handle({
             "geometry": "box_2d",
-            "params": {"width": 2.0, "height": 1.0},
+            "params": {"domain_width": 2.0, "domain_height": 1.0},
             "mesh_quality": "coarse",
             # "none" means use default, which is "translation" for box_2d
         })
@@ -197,7 +197,7 @@ class TestCreateMeshSphereNearWall:
                 "object_radius": 0.1,
                 "wall_distance": 0.15,
                 "wall_thickness": 0.1,
-                "vacuum_radius": 1.0,
+                "domain_radius": 1.0,
             },
             "mesh_quality": "coarse",
         })
@@ -226,7 +226,7 @@ class TestCreateMeshPhysicsRefinement:
         # With thin shell physics (using lambda dict)
         result_physics = await handle({
             "geometry": "sphere_in_vacuum",
-            "params": {"object_radius": 0.1, "vacuum_radius": 1.0},
+            "params": {"object_radius": 0.1, "domain_radius": 1.0},
             "mesh_quality": "very_coarse",
             "physics_params": {"lambda": {"object": 0.01}},
         })
@@ -246,7 +246,7 @@ class TestCreateMeshPhysicsRefinement:
 
         result = await handle({
             "geometry": "sphere_in_vacuum",
-            "params": {"object_radius": 0.1, "vacuum_radius": 1.0},
+            "params": {"object_radius": 0.1, "domain_radius": 1.0},
             "mesh_quality": "coarse",
             "physics_params": {"lambda": {"object": 0.00001}},  # Extremely thin
         })
@@ -268,7 +268,7 @@ class TestCreateMeshPhysicsRefinement:
 
         result = await handle({
             "geometry": "sphere_in_vacuum",
-            "params": {"object_radius": 0.1, "vacuum_radius": 1.0},
+            "params": {"object_radius": 0.1, "domain_radius": 1.0},
             "mesh_quality": "coarse",
             "physics_params": {
                 "alpha": alpha,
@@ -306,7 +306,7 @@ class TestCreateMeshPhysicsRefinement:
 
         result = await handle({
             "geometry": "sphere_in_vacuum",
-            "params": {"object_radius": 0.1, "vacuum_radius": 1.0},
+            "params": {"object_radius": 0.1, "domain_radius": 1.0},
             "mesh_quality": "coarse",
             "physics_params": {
                 "lambda": {"object": 0.05, "vacuum": 0.1},  # Direct values
@@ -329,7 +329,7 @@ class TestCreateMeshPhysicsRefinement:
 
         result = await handle({
             "geometry": "sphere_in_vacuum",
-            "params": {"object_radius": 0.1, "vacuum_radius": 1.0},
+            "params": {"object_radius": 0.1, "domain_radius": 1.0},
             "mesh_quality": "coarse",
             "physics_params": {
                 "alpha": 1e18,
@@ -349,7 +349,7 @@ class TestCreateMeshPhysicsRefinement:
 
         result = await handle({
             "geometry": "sphere_in_vacuum",
-            "params": {"object_radius": 0.1, "vacuum_radius": 1.0, "wall_thickness": 0.05},
+            "params": {"object_radius": 0.1, "domain_radius": 1.0, "wall_thickness": 0.05},
             "mesh_quality": "coarse",
             "physics_params": {
                 "alpha": 1e18,
@@ -376,33 +376,78 @@ class TestCreateMeshPhysicsRefinement:
 
 
 class TestCreateMeshCustom2D:
-    """Test custom_2d geometry."""
+    """Test custom_2d_axial and custom_2d_translation geometries."""
 
     @pytest.fixture(autouse=True)
     def reset(self):
         reset_session()
 
     @pytest.mark.asyncio
-    async def test_custom_2d_with_points(self):
-        """Create custom 2D shape with inline points."""
+    async def test_custom_2d_axial_with_points(self):
+        """Create custom 2D axisymmetric shape with inline points."""
         from tools.create_mesh import handle
 
+        # Half-hexagon with r >= 0 (revolved to create 3D shape)
         result = await handle({
-            "geometry": "custom_2d",
+            "geometry": "custom_2d_axial",
             "params": {
                 "points": [
-                    [0.2, 0.0], [0.1, 0.173], [-0.1, 0.173],
-                    [-0.2, 0.0], [-0.1, -0.173], [0.1, -0.173],
+                    [0.0, 0.2], [0.173, 0.1], [0.173, -0.1], [0.0, -0.2],
                 ],
-                "vacuum_radius": 1.0,
+                "domain_radius": 1.0,
             },
             "mesh_quality": "coarse",
         })
 
         data = json.loads(result[0].text)
         assert "error" not in data
-        assert data["geometry"] == "custom_2d"
+        assert data["geometry"] == "custom_2d_axial"
+        assert data["symmetry"] == "axial"
         assert "object_bounds" in data["domain_bounds"]
+
+    @pytest.mark.asyncio
+    async def test_custom_2d_translation_with_points(self):
+        """Create custom 2D translation shape with inline points."""
+        from tools.create_mesh import handle
+
+        # Full hexagon (extruded in z)
+        result = await handle({
+            "geometry": "custom_2d_translation",
+            "params": {
+                "points": [
+                    [0.2, 0.0], [0.1, 0.173], [-0.1, 0.173],
+                    [-0.2, 0.0], [-0.1, -0.173], [0.1, -0.173],
+                ],
+                "domain_radius": 1.0,
+            },
+            "mesh_quality": "coarse",
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" not in data
+        assert data["geometry"] == "custom_2d_translation"
+        assert data["symmetry"] == "translation"
+        assert "object_bounds" in data["domain_bounds"]
+
+    @pytest.mark.asyncio
+    async def test_custom_2d_axial_rejects_negative_r(self):
+        """custom_2d_axial should reject points with r < 0."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "custom_2d_axial",
+            "params": {
+                "points": [
+                    [0.2, 0.0], [-0.1, 0.173],  # Negative r value
+                ],
+                "domain_radius": 1.0,
+            },
+            "mesh_quality": "coarse",
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert "r < 0" in data["error"]["message"] or "r values >= 0" in data["error"]["message"]
 
     @pytest.mark.asyncio
     async def test_custom_2d_missing_params(self):
@@ -410,9 +455,9 @@ class TestCreateMeshCustom2D:
         from tools.create_mesh import handle
 
         result = await handle({
-            "geometry": "custom_2d",
+            "geometry": "custom_2d_axial",
             "params": {
-                "vacuum_radius": 1.0,
+                "domain_radius": 1.0,
             },
         })
 
@@ -439,7 +484,7 @@ class TestCreateMeshNotImplemented:
                 "rx": 0.1,
                 "ry": 0.2,
                 "rz": 0.15,
-                "vacuum_radius": 1.0,
+                "domain_radius": 1.0,
             },
         })
 
@@ -593,7 +638,7 @@ class TestCreateMeshParallelPlates:
 
 
 class TestFixedSymmetry:
-    """Test that fixed symmetry geometries cannot be overridden."""
+    """Test that all geometries have fixed symmetry."""
 
     @pytest.fixture(autouse=True)
     def reset(self):
@@ -601,43 +646,51 @@ class TestFixedSymmetry:
         reset_session()
 
     @pytest.mark.asyncio
-    async def test_sphere_symmetry_override_ignored(self):
-        """Attempting to override sphere_in_vacuum symmetry should warn."""
+    async def test_sphere_has_fixed_axial_symmetry(self):
+        """sphere_in_vacuum always uses axial symmetry."""
         from tools.create_mesh import handle
 
         result = await handle({
             "geometry": "sphere_in_vacuum",
-            "params": {"object_radius": 0.1, "vacuum_radius": 1.0},
+            "params": {"object_radius": 0.1, "domain_radius": 1.0},
             "mesh_quality": "coarse",
-            "symmetry": "translation",  # Invalid for sphere
         })
 
         data = json.loads(result[0].text)
         assert "error" not in data
-        # Should still use axial despite request
         assert data["symmetry"] == "axial"
-        # Should have warning about ignored symmetry
-        assert "warnings" in data
-        assert any("translation" in w and "ignored" in w for w in data["warnings"])
 
     @pytest.mark.asyncio
-    async def test_custom_2d_symmetry_override_allowed(self):
-        """custom_2d symmetry can be overridden (not fixed)."""
+    async def test_custom_2d_has_fixed_symmetry(self):
+        """custom_2d_axial and custom_2d_translation have fixed symmetry."""
         from tools.create_mesh import handle
 
+        # custom_2d_axial always uses axial symmetry
         result = await handle({
-            "geometry": "custom_2d",
+            "geometry": "custom_2d_axial",
             "params": {
                 "points": [[0.0, 0.2], [0.2, 0.0], [0.0, -0.2]],
-                "vacuum_radius": 1.0,
+                "domain_radius": 1.0,
             },
             "mesh_quality": "coarse",
-            "symmetry": "translation",  # Override default axial
         })
 
         data = json.loads(result[0].text)
         assert "error" not in data
-        # Should use the requested symmetry
+        assert data["symmetry"] == "axial"
+
+        reset_session()
+
+        # custom_2d_translation always uses translation symmetry
+        result = await handle({
+            "geometry": "custom_2d_translation",
+            "params": {
+                "points": [[0.0, 0.2], [0.2, 0.0], [0.0, -0.2]],
+                "domain_radius": 1.0,
+            },
+            "mesh_quality": "coarse",
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" not in data
         assert data["symmetry"] == "translation"
-        # No warning about ignored symmetry
-        assert "warnings" not in data or not any("ignored" in w for w in data.get("warnings", []))

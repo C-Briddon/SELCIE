@@ -174,7 +174,7 @@
 
 ## Full workflow tests
 
-### Sphere in Vacuum (Complete Test)
+### Sphere in Vacuum (Complete Test, Baseline result here is 3.4e-6)
 
 > I want to simulate a chameleon field around a sphere in a vacuum chamber.
 >
@@ -283,3 +283,19 @@
 > 3. Plot the 2D field distribution overlaid on the density structure
 > 4. Compare with the adiabatic solution 
 > 4. Identify where the field is screened vs unscreened
+
+### R(theta) optimisation
+
+> I want to optimise the shape of an source with axial symmetry, parameterised by R(theta)
+>
+> Setup:
+> - Fixed volume of 0.01
+> - 20 equally spaced theta values 
+> - Vacuum chamber radius 1.0, wall thickness 0.05
+> - Use α = 1e18 and n = 1
+> - Source density: 1e17
+> - Vacuum density: 1.0
+> 
+> Find the optimal fifth force at a minimum distance of 0.05 from the source and wall
+> 
+> Explain your reasoning process. Save the results in an optimal directory. 

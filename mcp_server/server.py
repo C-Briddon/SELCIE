@@ -35,6 +35,7 @@ from tools import (
     handle_clear,
 )
 
+sys.stderr.fileno()  # Initialize stderr for MCP transport in Codex
 
 # Create the MCP server
 server = Server("selcie")
