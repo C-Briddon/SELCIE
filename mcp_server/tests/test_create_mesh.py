@@ -637,6 +637,272 @@ class TestCreateMeshParallelPlates:
         assert data["error"]["code"] == "MISSING_PARAMS"
 
 
+class TestParameterValidation:
+    """Test geometry parameter validation."""
+
+    @pytest.fixture(autouse=True)
+    def reset(self):
+        """Reset session before each test."""
+        reset_session()
+
+    @pytest.mark.asyncio
+    async def test_negative_radius_rejected(self):
+        """Negative radius should be rejected."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "sphere_in_vacuum",
+            "params": {
+                "object_radius": -0.1,  # Invalid
+                "domain_radius": 1.0,
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "INVALID_PARAMS"
+        assert "object_radius must be positive" in str(data["error"]["details"])
+
+    @pytest.mark.asyncio
+    async def test_zero_radius_rejected(self):
+        """Zero radius should be rejected."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "sphere_in_vacuum",
+            "params": {
+                "object_radius": 0.0,  # Invalid
+                "domain_radius": 1.0,
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "INVALID_PARAMS"
+
+    @pytest.mark.asyncio
+    async def test_sphere_radius_larger_than_domain(self):
+        """Object radius >= domain radius should be rejected."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "sphere_in_vacuum",
+            "params": {
+                "object_radius": 1.5,  # Larger than domain
+                "domain_radius": 1.0,
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "INVALID_PARAMS"
+        assert "must be less than" in str(data["error"]["details"])
+
+    @pytest.mark.asyncio
+    async def test_ellipse_semi_axes_larger_than_domain(self):
+        """Ellipse semi-axes exceeding domain should be rejected."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "ellipse_in_vacuum",
+            "params": {
+                "rx": 1.5,  # Larger than domain
+                "ry": 0.5,
+                "domain_radius": 1.0,
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "INVALID_PARAMS"
+
+    @pytest.mark.asyncio
+    async def test_shell_inner_larger_than_outer(self):
+        """Shell inner radius >= outer radius should be rejected."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "shell_in_vacuum",
+            "params": {
+                "inner_radius": 0.5,
+                "outer_radius": 0.3,  # Smaller than inner
+                "domain_radius": 1.0,
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "INVALID_PARAMS"
+        assert "must be less than" in str(data["error"]["details"])
+
+    @pytest.mark.asyncio
+    async def test_shell_outer_larger_than_domain(self):
+        """Shell outer radius >= domain radius should be rejected."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "shell_in_vacuum",
+            "params": {
+                "inner_radius": 0.5,
+                "outer_radius": 1.5,  # Larger than domain
+                "domain_radius": 1.0,
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "INVALID_PARAMS"
+
+    @pytest.mark.asyncio
+    async def test_cylinder_radius_larger_than_domain(self):
+        """Cylinder radius >= domain radius should be rejected."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "cylinder_in_vacuum",
+            "params": {
+                "object_radius": 1.5,  # Larger than domain
+                "object_height": 0.5,
+                "domain_radius": 1.0,
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "INVALID_PARAMS"
+
+    @pytest.mark.asyncio
+    async def test_cylinder_height_larger_than_domain(self):
+        """Cylinder height/2 >= domain radius should be rejected."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "cylinder_in_vacuum",
+            "params": {
+                "object_radius": 0.2,
+                "object_height": 3.0,  # height/2 = 1.5 > domain
+                "domain_radius": 1.0,
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "INVALID_PARAMS"
+
+    @pytest.mark.asyncio
+    async def test_two_spheres_overlapping(self):
+        """Two spheres that overlap should be rejected."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "two_spheres",
+            "params": {
+                "radius_1": 0.3,
+                "radius_2": 0.3,
+                "separation": 0.4,  # Spheres overlap (0.3 + 0.3 = 0.6 > 0.4)
+                "domain_radius": 2.0,
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "INVALID_PARAMS"
+        assert "overlap" in str(data["error"]["details"]).lower()
+
+    @pytest.mark.asyncio
+    async def test_two_spheres_outside_domain(self):
+        """Two spheres extending outside domain should be rejected."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "two_spheres",
+            "params": {
+                "radius_1": 0.2,
+                "radius_2": 0.2,
+                "separation": 2.0,  # center + radius extends past domain
+                "domain_radius": 1.0,
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "INVALID_PARAMS"
+
+    @pytest.mark.asyncio
+    async def test_sphere_near_wall_intersects_wall(self):
+        """Sphere intersecting wall should be rejected."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "sphere_near_wall",
+            "params": {
+                "object_radius": 0.3,
+                "wall_distance": 0.2,  # Sphere would intersect wall
+                "wall_thickness": 0.1,
+                "domain_radius": 1.0,
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "INVALID_PARAMS"
+        assert "intersect" in str(data["error"]["details"]).lower() or "wall_distance" in str(data["error"]["details"])
+
+    @pytest.mark.asyncio
+    async def test_sphere_in_profile_outside_domain(self):
+        """Sphere in profile extending outside domain should be rejected."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "sphere_in_profile",
+            "params": {
+                "object_radius": 0.3,
+                "domain_radius": 1.0,
+                "center_z": 0.9,  # 0.9 + 0.3 = 1.2 > domain_radius
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "INVALID_PARAMS"
+
+    @pytest.mark.asyncio
+    async def test_parallel_plates_domain_too_small(self):
+        """Parallel plates with domain_height < plate_separation should be rejected."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "parallel_plates",
+            "params": {
+                "plate_separation": 2.0,
+                "plate_thickness": 0.1,
+                "domain_height": 1.0,  # Smaller than separation
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "INVALID_PARAMS"
+
+    @pytest.mark.asyncio
+    async def test_valid_params_accepted(self):
+        """Valid parameters should be accepted."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "sphere_in_vacuum",
+            "params": {
+                "object_radius": 0.1,  # Valid: 0.1 < 1.0
+                "domain_radius": 1.0,
+            },
+            "mesh_quality": "coarse",
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" not in data
+        assert data["geometry"] == "sphere_in_vacuum"
+
+
 class TestFixedSymmetry:
     """Test that all geometries have fixed symmetry."""
 

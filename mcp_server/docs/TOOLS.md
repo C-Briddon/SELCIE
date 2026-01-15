@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-01-15 20:28_
+_Generated: 2026-01-15 21:01_
 
 ---
 

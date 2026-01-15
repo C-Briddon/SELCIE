@@ -65,6 +65,129 @@ REFINEMENT_LIMITS = {
 DEFAULT_MAX_CELLS = 200000
 
 
+def validate_geometry_params(geometry: str, params: dict) -> list[str]:
+    """Validate geometry parameters for logical consistency.
+
+    Returns a list of error messages. Empty list means validation passed.
+    """
+    errors = []
+
+    def check_positive(name: str, value: float | None) -> None:
+        if value is not None and value <= 0:
+            errors.append(f"{name} must be positive (got {value})")
+
+    def check_less_than(name1: str, val1: float | None, name2: str, val2: float | None) -> None:
+        if val1 is not None and val2 is not None and val1 >= val2:
+            errors.append(f"{name1} ({val1}) must be less than {name2} ({val2})")
+
+    # Common parameter extraction
+    object_radius = params.get("object_radius")
+    domain_radius = params.get("domain_radius")
+    wall_thickness = params.get("wall_thickness")
+
+    # Check all provided numeric params are positive
+    positive_params = [
+        "object_radius", "domain_radius", "wall_thickness",
+        "rx", "ry", "object_height",
+        "domain_width", "domain_height", "domain_depth",
+        "inner_radius", "outer_radius",
+        "radius_1", "radius_2", "separation",
+        "wall_distance", "plate_separation", "plate_thickness",
+    ]
+    for param_name in positive_params:
+        if param_name in params:
+            check_positive(param_name, params[param_name])
+
+    # Geometry-specific validation
+    if geometry == "sphere_in_vacuum":
+        check_less_than("object_radius", object_radius, "domain_radius", domain_radius)
+
+    elif geometry == "ellipse_in_vacuum":
+        rx, ry = params.get("rx"), params.get("ry")
+        if rx is not None and ry is not None and domain_radius is not None:
+            max_semi = max(rx, ry)
+            if max_semi >= domain_radius:
+                errors.append(
+                    f"Ellipse semi-axes (rx={rx}, ry={ry}) must fit within "
+                    f"domain_radius ({domain_radius})"
+                )
+
+    elif geometry == "cylinder_in_vacuum":
+        object_height = params.get("object_height")
+        check_less_than("object_radius", object_radius, "domain_radius", domain_radius)
+        if object_height is not None and domain_radius is not None:
+            half_height = object_height / 2
+            if half_height >= domain_radius:
+                errors.append(
+                    f"Cylinder half-height ({half_height}) must be less than "
+                    f"domain_radius ({domain_radius})"
+                )
+
+    elif geometry == "shell_in_vacuum":
+        inner_radius = params.get("inner_radius")
+        outer_radius = params.get("outer_radius")
+        check_less_than("inner_radius", inner_radius, "outer_radius", outer_radius)
+        check_less_than("outer_radius", outer_radius, "domain_radius", domain_radius)
+
+    elif geometry == "two_spheres":
+        radius_1 = params.get("radius_1")
+        radius_2 = params.get("radius_2")
+        separation = params.get("separation")
+        if radius_1 is not None and radius_2 is not None and separation is not None:
+            if separation < radius_1 + radius_2:
+                errors.append(
+                    f"separation ({separation}) must be >= radius_1 + radius_2 "
+                    f"({radius_1 + radius_2}) to avoid overlap"
+                )
+        # Check spheres fit in domain (they're centered at z = ±separation/2)
+        if separation is not None and domain_radius is not None:
+            max_radius = max(radius_1 or 0, radius_2 or 0)
+            required_domain = separation / 2 + max_radius
+            if required_domain >= domain_radius:
+                errors.append(
+                    f"Spheres extend to z={required_domain:.3f} but domain_radius "
+                    f"is only {domain_radius}"
+                )
+
+    elif geometry == "sphere_near_wall":
+        wall_distance = params.get("wall_distance")
+        wall_thick = params.get("wall_thickness", 0.1)  # Has default
+        if object_radius is not None and wall_distance is not None:
+            if wall_distance <= object_radius:
+                errors.append(
+                    f"wall_distance ({wall_distance}) must be greater than "
+                    f"object_radius ({object_radius}) so sphere doesn't intersect wall"
+                )
+        if wall_distance is not None and wall_thick is not None and domain_radius is not None:
+            if wall_distance + wall_thick >= domain_radius:
+                errors.append(
+                    f"wall_distance + wall_thickness ({wall_distance + wall_thick}) "
+                    f"must be less than domain_radius ({domain_radius})"
+                )
+
+    elif geometry == "sphere_in_profile":
+        center_z = params.get("center_z", 0)
+        check_less_than("object_radius", object_radius, "domain_radius", domain_radius)
+        if object_radius is not None and domain_radius is not None:
+            if abs(center_z) + object_radius >= domain_radius:
+                errors.append(
+                    f"Sphere at center_z={center_z} with radius={object_radius} "
+                    f"extends beyond domain_radius ({domain_radius})"
+                )
+
+    elif geometry == "parallel_plates":
+        plate_separation = params.get("plate_separation")
+        domain_height = params.get("domain_height")
+        if domain_height is not None and plate_separation is not None:
+            if domain_height < plate_separation:
+                errors.append(
+                    f"domain_height ({domain_height}) must be >= plate_separation "
+                    f"({plate_separation})"
+                )
+
+    return errors
+
+
 def estimate_physics_refinement(
     object_size: float,
     physics_params: dict,
@@ -1161,6 +1284,17 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
                     "message": "custom_3d requires either 'contour_file' or 'contours' parameter",
                 }
             }, indent=2))]
+
+    # Validate parameter values
+    validation_errors = validate_geometry_params(geometry, params)
+    if validation_errors:
+        return [TextContent(type="text", text=json.dumps({
+            "error": {
+                "code": "INVALID_PARAMS",
+                "message": "Invalid geometry parameters",
+                "details": validation_errors,
+            }
+        }, indent=2))]
 
     # Get session and generate mesh ID
     session = get_session()
