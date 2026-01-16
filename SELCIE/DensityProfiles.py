@@ -72,7 +72,8 @@ class DensityProfile(d.UserExpression):
             meshfile.read(self.subdomains, "Subdomain")
 
         with d.XDMFFile(file_path + "/boundaries.xdmf") as boundaryfile:
-            mvc = d.MeshValueCollection("size_t", self.mesh, dimension)
+            # Boundaries are facets: dimension-1 (lines for 2D, triangles for 3D)
+            mvc = d.MeshValueCollection("size_t", self.mesh, dimension - 1)
             boundaryfile.read(mvc, "Boundary")
             self.boundary = d.MeshFunction("size_t", self.mesh, mvc)
 

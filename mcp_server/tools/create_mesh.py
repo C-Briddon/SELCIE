@@ -17,7 +17,7 @@ from utils.session import get_session, MeshInfo
 from utils.density import extract_density_value, SPHERICAL_GEOMETRIES
 
 
-# Mesh quality settings: (CellSizeMin, CellSizeMax, DistMax) relative to object size
+# Mesh quality settings for 2D: (CellSizeMin, CellSizeMax, DistMax) relative to object size
 # Consistent 2.5x ramp between levels, 4x max/min ratio
 MESH_QUALITY_SETTINGS = {
     "very_coarse": {"cell_min_factor": 0.125, "cell_max_factor": 0.5, "dist_max_factor": 2.0},
@@ -25,6 +25,16 @@ MESH_QUALITY_SETTINGS = {
     "medium": {"cell_min_factor": 0.02, "cell_max_factor": 0.08, "dist_max_factor": 0.5},
     "fine": {"cell_min_factor": 0.008, "cell_max_factor": 0.032, "dist_max_factor": 0.2},
     "very_fine": {"cell_min_factor": 0.0032, "cell_max_factor": 0.0128, "dist_max_factor": 0.1},
+}
+
+# Mesh quality settings for 3D: more gradual increments since cell count scales as 1/h³
+# ~1.6x ramp between levels → ~4x cell count increase per level (1.6³ ≈ 4.1)
+MESH_QUALITY_SETTINGS_3D = {
+    "very_coarse": {"cell_min_factor": 0.20, "cell_max_factor": 0.8, "dist_max_factor": 2.0},
+    "coarse": {"cell_min_factor": 0.125, "cell_max_factor": 0.5, "dist_max_factor": 1.5},
+    "medium": {"cell_min_factor": 0.08, "cell_max_factor": 0.32, "dist_max_factor": 1.0},
+    "fine": {"cell_min_factor": 0.05, "cell_max_factor": 0.2, "dist_max_factor": 0.6},
+    "very_fine": {"cell_min_factor": 0.032, "cell_max_factor": 0.128, "dist_max_factor": 0.4},
 }
 
 # Default symmetry for each geometry
@@ -48,6 +58,7 @@ DEFAULT_SYMMETRY = {
     "custom_2d_axial": "axial",
     "custom_2d_translation": "translation",
     "custom_3d": "none",  # True 3D mesh
+    "custom_step": "none",  # 3D mesh from STEP file import
 }
 
 # All geometries have fixed symmetry determined by their type.
@@ -283,7 +294,7 @@ TOOL_DEFINITION = Tool(
                     "cylinder_in_vacuum", "shell_in_vacuum", "two_spheres", "sphere_near_wall",
                     "sphere_in_profile",
                     "box_2d", "box_3d", "disk", "sphere_domain", "parallel_plates",
-                    "custom_2d_axial", "custom_2d_translation", "custom_3d"
+                    "custom_2d_axial", "custom_2d_translation", "custom_3d", "custom_step"
                 ],
                 "description": (
                     "Geometry template. Choose based on physical setup:\n\n"
@@ -318,7 +329,9 @@ TOOL_DEFINITION = Tool(
                     "revolved around z-axis. Regions: object, vacuum [+wall]. Fixed symmetry: axial (2D).\n"
                     "- custom_2d_translation: Arbitrary 2D shape with translation symmetry. Points are [x, y], "
                     "extruded in z. Regions: object, vacuum [+wall]. Fixed symmetry: translation (2D).\n"
-                    "- custom_3d: Arbitrary 3D shape from contours. Regions: object. Fixed symmetry: none (true 3D)."
+                    "- custom_3d: Arbitrary 3D shape from contours. Regions: object. Fixed symmetry: none (true 3D).\n"
+                    "- custom_step: Import 3D geometry from STEP/IGES/BREP file. Object is centered in spherical vacuum domain. "
+                    "Regions: object, vacuum. Fixed symmetry: none (true 3D)."
                 ),
             },
             "params": {
@@ -345,6 +358,7 @@ TOOL_DEFINITION = Tool(
                     "shape_file": {"type": "string", "description": "Path to file with shape points (custom_2d_axial, custom_2d_translation)"},
                     "contour_file": {"type": "string", "description": "Path to 3D contour file (custom_3d)"},
                     "contours": {"type": "array", "description": "List of contour point lists for custom_3d"},
+                    "step_file": {"type": "string", "description": "Path to STEP/IGES/BREP file (custom_step)"},
                     "plate_separation": {"type": "number", "description": "Gap between inner surfaces of plates (parallel_plates)"},
                     "plate_thickness": {"type": "number", "description": "Thickness of each plate (parallel_plates)"},
                 },
@@ -369,7 +383,7 @@ TOOL_DEFINITION = Tool(
             "physics_params": {
                 "type": "object",
                 "description": (
-                    "Physics parameters for automatic thin-shell mesh refinement. "
+                    "Physics parameters for automatic thin-shell mesh refinement (recommended when available). "
                     "Option 1: Provide 'lambda' dict mapping region names to Compton wavelengths. "
                     "Option 2: Provide 'alpha', 'density' dict, and 'n' - lambdas will be computed per region. "
                     "The mesh will be refined near boundaries of dense regions to resolve thin shells."
@@ -1213,6 +1227,304 @@ def _create_custom_3d(
     return regions, bounds
 
 
+def _create_custom_step(
+    params: dict,
+    quality: dict,
+    mesh_dir: str,
+    mesh_id: str,
+    physics_info: dict = None,
+) -> tuple[list[str], dict, str]:
+    """Create mesh from imported STEP/IGES/BREP file.
+
+    This function bypasses MeshingTools entirely since we need direct control
+    over gmsh for STEP file import and boolean operations.
+
+    Imports a CAD file, centers it at the origin, embeds it in a spherical
+    vacuum domain, and creates a mesh with object and vacuum subdomains.
+
+    Required params:
+    - step_file: Path to STEP, IGES, or BREP file
+    - domain_radius: Radius of spherical vacuum domain
+
+    Optional params:
+    - scale: Scale factor for imported geometry (default 1.0)
+    - physics_info: Dict with physics refinement info (lambda_min, etc.)
+
+    Returns:
+    - regions: List of region names
+    - bounds: Dict with geometry bounds
+    - mesh_path: Path to generated mesh files
+    """
+    import gmsh
+    import os
+
+    step_file = params["step_file"]
+    domain_radius = params["domain_radius"]
+    scale = params.get("scale", 1.0)
+
+    # Validate file exists
+    if not os.path.exists(step_file):
+        raise FileNotFoundError(f"STEP file not found: {step_file}")
+
+    # Initialize gmsh fresh (don't use MeshingTools)
+    gmsh.initialize()
+    gmsh.model.add(mesh_id)
+    gmsh.option.setNumber("General.Terminal", 0)  # Suppress terminal output
+
+    try:
+        # Import the STEP file using OpenCASCADE kernel
+        imported_entities = gmsh.model.occ.importShapes(step_file, highestDimOnly=True)
+        gmsh.model.occ.synchronize()
+
+        if not imported_entities:
+            raise ValueError(f"No geometry entities found in file: {step_file}")
+
+        # Get bounding box of all imported entities
+        xmin, ymin, zmin = float('inf'), float('inf'), float('inf')
+        xmax, ymax, zmax = float('-inf'), float('-inf'), float('-inf')
+        for dim, tag in imported_entities:
+            bx1, by1, bz1, bx2, by2, bz2 = gmsh.model.occ.getBoundingBox(dim, tag)
+            xmin, ymin, zmin = min(xmin, bx1), min(ymin, by1), min(zmin, bz1)
+            xmax, ymax, zmax = max(xmax, bx2), max(ymax, by2), max(zmax, bz2)
+
+        # Calculate center and characteristic size
+        center_x = (xmin + xmax) / 2
+        center_y = (ymin + ymax) / 2
+        center_z = (zmin + zmax) / 2
+        char_size = max(xmax - xmin, ymax - ymin, zmax - zmin)
+
+        # Apply scale if needed
+        if scale != 1.0:
+            gmsh.model.occ.dilate(imported_entities, center_x, center_y, center_z, scale, scale, scale)
+            char_size *= scale
+            gmsh.model.occ.synchronize()
+            # Recalculate bounds after scaling
+            xmin, ymin, zmin = float('inf'), float('inf'), float('inf')
+            xmax, ymax, zmax = float('-inf'), float('-inf'), float('-inf')
+            for dim, tag in imported_entities:
+                bx1, by1, bz1, bx2, by2, bz2 = gmsh.model.occ.getBoundingBox(dim, tag)
+                xmin, ymin, zmin = min(xmin, bx1), min(ymin, by1), min(zmin, bz1)
+                xmax, ymax, zmax = max(xmax, bx2), max(ymax, by2), max(zmax, bz2)
+            center_x = (xmin + xmax) / 2
+            center_y = (ymin + ymax) / 2
+            center_z = (zmin + zmax) / 2
+
+        # Translate to center at origin
+        dx, dy, dz = -center_x, -center_y, -center_z
+        gmsh.model.occ.translate(imported_entities, dx, dy, dz)
+        gmsh.model.occ.synchronize()
+
+        # Update bounds after centering
+        xmin, ymin, zmin = xmin + dx, ymin + dy, zmin + dz
+        xmax, ymax, zmax = xmax + dx, ymax + dy, zmax + dz
+
+        # Check that object fits within domain
+        max_extent = max(abs(xmin), abs(xmax), abs(ymin), abs(ymax), abs(zmin), abs(zmax))
+        if max_extent >= domain_radius:
+            raise ValueError(
+                f"Imported geometry extent ({max_extent:.4f}) exceeds domain_radius ({domain_radius}). "
+                f"Increase domain_radius or use scale parameter to shrink geometry."
+            )
+
+        # Create spherical vacuum domain
+        vacuum_sphere = gmsh.model.occ.addSphere(0, 0, 0, domain_radius)
+        gmsh.model.occ.synchronize()
+
+        # Boolean cut: vacuum = sphere - imported object(s)
+        # Get all 3D entities from imported shapes
+        object_entities = [(dim, tag) for dim, tag in imported_entities if dim == 3]
+
+        if not object_entities:
+            raise ValueError("No 3D volumes found in imported file. STEP file may contain only surfaces.")
+
+        # Perform boolean cut: vacuum with object hole
+        vacuum_with_hole, vacuum_map = gmsh.model.occ.cut(
+            [(3, vacuum_sphere)],
+            object_entities,
+            removeObject=True,
+            removeTool=False  # Keep the object
+        )
+        gmsh.model.occ.synchronize()
+
+        # Set up mesh sizes
+        # cell_min based on object size (for fine resolution near/in object)
+        # cell_max based on domain size (for coarse cells in far vacuum)
+        cell_min = quality["cell_min_factor"] * char_size
+        cell_max = quality["cell_max_factor"] * domain_radius
+
+        # Create physical groups for 3D volumes
+        # SELCIE solver expects markers to be 0, 1, 2, ... (not gmsh default 1, 2, 3, ...)
+        object_tags = [tag for dim, tag in object_entities if dim == 3]
+        gmsh.model.addPhysicalGroup(3, object_tags, tag=0, name="object")
+
+        vacuum_tags = [tag for dim, tag in vacuum_with_hole if dim == 3]
+        gmsh.model.addPhysicalGroup(3, vacuum_tags, tag=1, name="vacuum")
+
+        # Create physical groups for 2D boundary surfaces
+        # Get all 2D surface entities
+        all_surfaces = gmsh.model.getEntities(2)
+
+        # Separate object surfaces from outer boundary
+        # The outer boundary is on the vacuum sphere surface
+        object_surface_tags = []
+        outer_boundary_tags = []
+
+        for dim, tag in all_surfaces:
+            # Get bounding box of surface
+            bbox = gmsh.model.occ.getBoundingBox(dim, tag)
+            # Check if surface touches the outer sphere
+            max_dist = max(abs(bbox[0]), abs(bbox[1]), abs(bbox[2]),
+                          abs(bbox[3]), abs(bbox[4]), abs(bbox[5]))
+            if max_dist > domain_radius * 0.95:
+                outer_boundary_tags.append(tag)
+            else:
+                object_surface_tags.append(tag)
+
+        # Physical groups for surfaces: object=0, outer=1
+        if object_surface_tags:
+            gmsh.model.addPhysicalGroup(2, object_surface_tags, tag=0, name="object_surface")
+        if outer_boundary_tags:
+            gmsh.model.addPhysicalGroup(2, outer_boundary_tags, tag=1, name="outer_boundary")
+
+        # Set global mesh size options
+        gmsh.option.setNumber("Mesh.MeshSizeMin", cell_min)
+        gmsh.option.setNumber("Mesh.MeshSizeMax", cell_max)
+        gmsh.option.setNumber("Mesh.Algorithm3D", 1)  # Delaunay
+
+        # Apply refinement near object surfaces (always for STEP files)
+        # Use physics-based parameters if provided, otherwise use geometry-based defaults
+        if object_surface_tags:
+            if physics_info and physics_info.get("lambda_min"):
+                # Physics-aware refinement based on screening length
+                lambda_min = physics_info["lambda_min"]
+                shell_thickness = lambda_min
+                dist_max = min(3 * shell_thickness, quality["dist_max_factor"] * char_size)
+                target_boundary_cells = 5
+                cell_min_refined = shell_thickness / target_boundary_cells
+            else:
+                # Geometry-based refinement (no physics params)
+                # Use char_size/10 for boundary cells, refine within char_size/5 of surface
+                cell_min_refined = char_size / 10
+                dist_max = char_size / 5
+
+            # Apply limits
+            min_cell = char_size * 0.001  # Don't go too small
+            cell_min_refined = max(min_cell, cell_min_refined)
+
+            # Ensure refinement ratio isn't too extreme (max 50:1)
+            if cell_max / cell_min_refined > 50:
+                cell_min_refined = cell_max / 50
+
+            # Cell size inside the object - needs to be small enough to resolve flat profile
+            # Use ~10 cells across the object radius
+            cell_size_object = char_size / 10
+
+            # Create distance field from object surfaces
+            dist_field = gmsh.model.mesh.field.add("Distance")
+            gmsh.model.mesh.field.setNumbers(dist_field, "SurfacesList", object_surface_tags)
+
+            # Create threshold field: small cells near surface, large far away
+            thresh_field = gmsh.model.mesh.field.add("Threshold")
+            gmsh.model.mesh.field.setNumber(thresh_field, "InField", dist_field)
+            gmsh.model.mesh.field.setNumber(thresh_field, "SizeMin", cell_min_refined)
+            gmsh.model.mesh.field.setNumber(thresh_field, "SizeMax", cell_max)
+            gmsh.model.mesh.field.setNumber(thresh_field, "DistMin", 0)
+            gmsh.model.mesh.field.setNumber(thresh_field, "DistMax", dist_max)
+
+            # Create constant field for object interior refinement
+            const_field = gmsh.model.mesh.field.add("Constant")
+            gmsh.model.mesh.field.setNumber(const_field, "VIn", cell_size_object)
+            gmsh.model.mesh.field.setNumber(const_field, "VOut", cell_max)
+            gmsh.model.mesh.field.setNumbers(const_field, "VolumesList", object_tags)
+
+            # Combine fields: use minimum of threshold (boundary) and constant (interior)
+            min_field = gmsh.model.mesh.field.add("Min")
+            gmsh.model.mesh.field.setNumbers(min_field, "FieldsList", [thresh_field, const_field])
+
+            # Set as background field
+            gmsh.model.mesh.field.setAsBackgroundMesh(min_field)
+
+            # Update global min to allow refined cells
+            gmsh.option.setNumber("Mesh.MeshSizeMin", min(cell_min_refined, cell_size_object))
+
+        # Generate the 3D mesh
+        gmsh.model.mesh.generate(3)
+
+        # Create output directory
+        mesh_path = os.path.join(mesh_dir, "Saved Meshes", mesh_id)
+        os.makedirs(mesh_path, exist_ok=True)
+
+        # Save as MSH first
+        msh_file = os.path.join(mesh_path, f"{mesh_id}.msh")
+        gmsh.write(msh_file)
+
+        # Convert to XDMF using meshio
+        import meshio
+        msh_mesh = meshio.read(msh_file)
+
+        # Get all tetrahedra and their physical group markers
+        # Use get_cells_type and cell_data_dict to properly combine all tetra blocks
+        tetra_cells = msh_mesh.get_cells_type('tetra')
+        if tetra_cells is None or len(tetra_cells) == 0:
+            raise ValueError("No tetrahedra found in generated mesh")
+
+        tetra_subdomain_data = msh_mesh.cell_data_dict.get('gmsh:physical', {}).get('tetra')
+        if tetra_subdomain_data is None:
+            raise ValueError("No physical group data found for tetrahedra")
+
+        # Write mesh.xdmf with subdomain data
+        meshio.write(
+            os.path.join(mesh_path, "mesh.xdmf"),
+            meshio.Mesh(
+                points=msh_mesh.points,
+                cells=[("tetra", tetra_cells)],
+                cell_data={"Subdomain": [tetra_subdomain_data]},
+                field_data=msh_mesh.field_data,
+            )
+        )
+
+        # Write boundaries.xdmf with boundary surface data
+        triangle_cells = msh_mesh.get_cells_type('triangle')
+        triangle_boundary_data = msh_mesh.cell_data_dict.get('gmsh:physical', {}).get('triangle')
+
+        if triangle_cells is not None and len(triangle_cells) > 0 and triangle_boundary_data is not None:
+            meshio.write(
+                os.path.join(mesh_path, "boundaries.xdmf"),
+                meshio.Mesh(
+                    points=msh_mesh.points,
+                    cells=[("triangle", triangle_cells)],
+                    cell_data={"Boundary": [triangle_boundary_data]},
+                    field_data=msh_mesh.field_data,
+                )
+            )
+
+        # Clean up MSH file
+        os.remove(msh_file)
+
+    finally:
+        gmsh.finalize()
+
+    # Return regions, bounds, and mesh_path
+    regions = ["object", "vacuum"]
+    bounds = {
+        "object_bounds": {
+            "x_min": float(xmin),
+            "x_max": float(xmax),
+            "y_min": float(ymin),
+            "y_max": float(ymax),
+            "z_min": float(zmin),
+            "z_max": float(zmax),
+        },
+        "domain_radius": domain_radius,
+        "r_min": 0.0,
+        "r_max": domain_radius,
+        "imported_file": os.path.basename(step_file),
+        "char_size": char_size,
+    }
+
+    return regions, bounds, mesh_path
+
+
 async def handle(args: dict[str, Any]) -> list[TextContent]:
     """Handle create_mesh tool call."""
 
@@ -1229,7 +1541,7 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
         "sphere_in_vacuum", "ellipse_in_vacuum", "disk", "box_2d",
         "shell_in_vacuum", "cylinder_in_vacuum", "sphere_domain", "sphere_in_profile",
         "two_spheres", "sphere_near_wall", "box_3d", "parallel_plates",
-        "custom_2d_axial", "custom_2d_translation", "custom_3d",
+        "custom_2d_axial", "custom_2d_translation", "custom_3d", "custom_step",
     ]
     if geometry not in implemented:
         return [TextContent(type="text", text=json.dumps({
@@ -1256,6 +1568,7 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
         "parallel_plates": ["plate_separation", "plate_thickness"],
         "custom_2d_axial": ["domain_radius"],
         "custom_2d_translation": ["domain_radius"],
+        "custom_step": ["step_file", "domain_radius"],
     }
 
     missing = [p for p in required_params.get(geometry, []) if p not in params]
@@ -1309,13 +1622,16 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
         }, indent=2))]
 
     # Determine dimension based on geometry and symmetry
-    if geometry in ["ellipsoid_in_vacuum", "box_3d", "custom_3d"]:
+    if geometry in ["ellipsoid_in_vacuum", "box_3d", "custom_3d", "custom_step"]:
         dimension = 3
     else:
         dimension = 2
 
-    # Get quality settings
-    quality = MESH_QUALITY_SETTINGS[mesh_quality].copy()
+    # Get quality settings - use dedicated 3D settings for 3D meshes
+    if dimension == 3:
+        quality = MESH_QUALITY_SETTINGS_3D[mesh_quality].copy()
+    else:
+        quality = MESH_QUALITY_SETTINGS[mesh_quality].copy()
 
     # Apply physics-aware refinement if physics_params provided
     physics_params = args.get("physics_params")
@@ -1374,6 +1690,22 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
                 subdomain_size = float(np.max(pts) - np.min(pts)) / 2
             else:
                 subdomain_size = None
+        elif geometry in ("custom_step", "custom_3d"):
+            # For STEP/custom 3D, we don't know size until import
+            # Pass lambda info directly to mesh function which uses char_size
+            subdomain_size = None
+            physics_info = {
+                "lambda_per_region": lambda_per_region,
+                "lambda_min": min_lambda,
+                "lambda_min_region": min_lambda_region,
+                "refinement_applied": True,
+            }
+            if physics_params.get("alpha") is not None:
+                physics_info["computed_from"] = {
+                    "alpha": physics_params["alpha"],
+                    "density": {k: extract_density_value(v, symmetry, geometry) for k, v in physics_params.get("density", {}).items()},
+                    "n": physics_params.get("n", 1),
+                }
 
         if subdomain_size:
             # Use minimum lambda for refinement (most conservative)
@@ -1404,89 +1736,102 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
     # Create mesh
     mesh_dir = _get_mesh_dir()
 
-    try:
-        MT = MeshingTools(dimension=dimension, path=mesh_dir, display_messages=False)
-
-        if geometry == "sphere_in_vacuum":
-            regions, bounds = _create_sphere_in_vacuum(MT, params, quality)
-        elif geometry == "ellipse_in_vacuum":
-            regions, bounds = _create_ellipse_in_vacuum(MT, params, quality)
-        elif geometry == "disk":
-            regions, bounds = _create_disk(MT, params, quality)
-        elif geometry == "box_2d":
-            regions, bounds = _create_box_2d(MT, params, quality)
-        elif geometry == "shell_in_vacuum":
-            regions, bounds = _create_shell_in_vacuum(MT, params, quality)
-        elif geometry == "cylinder_in_vacuum":
-            regions, bounds = _create_cylinder_in_vacuum(MT, params, quality)
-        elif geometry == "sphere_domain":
-            regions, bounds = _create_sphere_domain(MT, params, quality)
-        elif geometry == "sphere_in_profile":
-            regions, bounds = _create_sphere_in_profile(MT, params, quality)
-        elif geometry == "two_spheres":
-            regions, bounds = _create_two_spheres(MT, params, quality)
-        elif geometry == "sphere_near_wall":
-            regions, bounds = _create_sphere_near_wall(MT, params, quality)
-        elif geometry == "box_3d":
-            regions, bounds = _create_box_3d(MT, params, quality)
-        elif geometry == "parallel_plates":
-            regions, bounds = _create_parallel_plates(MT, params, quality)
-        elif geometry == "custom_2d_axial":
-            regions, bounds = _create_custom_2d(MT, params, quality, symmetry="axial")
-        elif geometry == "custom_2d_translation":
-            regions, bounds = _create_custom_2d(MT, params, quality, symmetry="translation")
-        elif geometry == "custom_3d":
-            regions, bounds = _create_custom_3d(MT, params, quality)
-        else:
-            return [TextContent(type="text", text=json.dumps({
-                "error": {
-                    "code": "NOT_IMPLEMENTED",
-                    "message": f"Geometry '{geometry}' handler not found",
-                }
-            }, indent=2))]
-
-        # Generate the mesh (SELCIE saves to "Saved Meshes" subdir)
-        MT.generate_mesh(mesh_id, show_mesh=False)
-
-        # Convert to XDMF for FEniCS
-        MT.msh_2_xdmf(mesh_id, delete_old_file=True, auto_override=True)
-
-        # Full path to mesh files
-        mesh_path = os.path.join(mesh_dir, "Saved Meshes", mesh_id)
-
-        # Get mesh statistics by reading the generated mesh
-        n_cells = 0
-        n_vertices = 0
+    # custom_step bypasses MeshingTools entirely (direct gmsh for STEP import)
+    if geometry == "custom_step":
         try:
-            import meshio
-            mesh_file = os.path.join(mesh_path, "mesh.xdmf")
-            mesh = meshio.read(mesh_file)
-            n_vertices = len(mesh.points)
-            for cell_block in mesh.cells:
-                n_cells += len(cell_block.data)
-        except Exception:
-            pass  # meshio may not be installed or file format issue
-
-        # Check cell count limit
-        allow_large_mesh = args.get("allow_large_mesh", False)
-        if n_cells > DEFAULT_MAX_CELLS and not allow_large_mesh:
+            regions, bounds, mesh_path = _create_custom_step(params, quality, mesh_dir, mesh_id, physics_info)
+        except Exception as e:
             return [TextContent(type="text", text=json.dumps({
                 "error": {
-                    "code": "MESH_TOO_LARGE",
-                    "message": (
-                        f"Mesh has {n_cells:,} cells, exceeding limit of {DEFAULT_MAX_CELLS:,}. "
-                        f"Use coarser mesh_quality or set allow_large_mesh=true to override."
-                    ),
-                    "n_cells": n_cells,
-                    "limit": DEFAULT_MAX_CELLS,
+                    "code": "MESH_GENERATION_FAILED",
+                    "message": str(e),
+                }
+            }, indent=2))]
+    else:
+        # Use MeshingTools for all other geometries
+        try:
+            MT = MeshingTools(dimension=dimension, path=mesh_dir, display_messages=False)
+
+            if geometry == "sphere_in_vacuum":
+                regions, bounds = _create_sphere_in_vacuum(MT, params, quality)
+            elif geometry == "ellipse_in_vacuum":
+                regions, bounds = _create_ellipse_in_vacuum(MT, params, quality)
+            elif geometry == "disk":
+                regions, bounds = _create_disk(MT, params, quality)
+            elif geometry == "box_2d":
+                regions, bounds = _create_box_2d(MT, params, quality)
+            elif geometry == "shell_in_vacuum":
+                regions, bounds = _create_shell_in_vacuum(MT, params, quality)
+            elif geometry == "cylinder_in_vacuum":
+                regions, bounds = _create_cylinder_in_vacuum(MT, params, quality)
+            elif geometry == "sphere_domain":
+                regions, bounds = _create_sphere_domain(MT, params, quality)
+            elif geometry == "sphere_in_profile":
+                regions, bounds = _create_sphere_in_profile(MT, params, quality)
+            elif geometry == "two_spheres":
+                regions, bounds = _create_two_spheres(MT, params, quality)
+            elif geometry == "sphere_near_wall":
+                regions, bounds = _create_sphere_near_wall(MT, params, quality)
+            elif geometry == "box_3d":
+                regions, bounds = _create_box_3d(MT, params, quality)
+            elif geometry == "parallel_plates":
+                regions, bounds = _create_parallel_plates(MT, params, quality)
+            elif geometry == "custom_2d_axial":
+                regions, bounds = _create_custom_2d(MT, params, quality, symmetry="axial")
+            elif geometry == "custom_2d_translation":
+                regions, bounds = _create_custom_2d(MT, params, quality, symmetry="translation")
+            elif geometry == "custom_3d":
+                regions, bounds = _create_custom_3d(MT, params, quality)
+            else:
+                return [TextContent(type="text", text=json.dumps({
+                    "error": {
+                        "code": "NOT_IMPLEMENTED",
+                        "message": f"Geometry '{geometry}' handler not found",
+                    }
+                }, indent=2))]
+
+            # Generate the mesh (SELCIE saves to "Saved Meshes" subdir)
+            MT.generate_mesh(mesh_id, show_mesh=False)
+
+            # Convert to XDMF for FEniCS
+            MT.msh_2_xdmf(mesh_id, delete_old_file=True, auto_override=True)
+
+            # Full path to mesh files
+            mesh_path = os.path.join(mesh_dir, "Saved Meshes", mesh_id)
+
+        except Exception as e:
+            return [TextContent(type="text", text=json.dumps({
+                "error": {
+                    "code": "MESH_GENERATION_FAILED",
+                    "message": str(e),
                 }
             }, indent=2))]
 
-    except Exception as e:
+    # Get mesh statistics by reading the generated mesh (for both custom_step and other geometries)
+    n_cells = 0
+    n_vertices = 0
+    try:
+        import meshio
+        mesh_file = os.path.join(mesh_path, "mesh.xdmf")
+        mesh = meshio.read(mesh_file)
+        n_vertices = len(mesh.points)
+        for cell_block in mesh.cells:
+            n_cells += len(cell_block.data)
+    except Exception:
+        pass  # meshio may not be installed or file format issue
+
+    # Check cell count limit
+    allow_large_mesh = args.get("allow_large_mesh", False)
+    if n_cells > DEFAULT_MAX_CELLS and not allow_large_mesh:
         return [TextContent(type="text", text=json.dumps({
             "error": {
-                "code": "MESH_GENERATION_FAILED",
-                "message": str(e),
+                "code": "MESH_TOO_LARGE",
+                "message": (
+                    f"Mesh has {n_cells:,} cells, exceeding limit of {DEFAULT_MAX_CELLS:,}. "
+                    f"Use coarser mesh_quality or set allow_large_mesh=true to override."
+                ),
+                "n_cells": n_cells,
+                "limit": DEFAULT_MAX_CELLS,
             }
         }, indent=2))]
 
@@ -1503,9 +1848,13 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
     )
 
     # Create region name -> marker mapping
-    # SELCIE assigns markers in the order subdomains are created (0, 1, 2, ...)
-    # The regions list is already in creation order from the geometry functions
-    regions_dict = {region: i for i, region in enumerate(regions)}
+    # Most geometry functions return a list (markers assigned as 0, 1, 2, ...)
+    # custom_step returns a dict with actual physical group tags from gmsh
+    if isinstance(regions, dict):
+        regions_dict = regions
+    else:
+        # SELCIE assigns markers in the order subdomains are created (0, 1, 2, ...)
+        regions_dict = {region: i for i, region in enumerate(regions)}
 
     mesh_info.regions = regions_dict
     session.add_mesh(mesh_info)

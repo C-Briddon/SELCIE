@@ -225,14 +225,23 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
             V_vec = d.VectorFunctionSpace(mesh, "CG", deg_V)
             field_grad = d.project(d.grad(field), V_vec)
 
-        # Get mesh bounds for radial mode
+        # Get mesh dimension and bounds
         coords = mesh.coordinates()
+        mesh_dim = mesh.geometry().dim()
         mesh_bounds = {
+            "x_min": float(coords[:, 0].min()),
+            "x_max": float(coords[:, 0].max()),
+            "y_min": float(coords[:, 1].min()),
+            "y_max": float(coords[:, 1].max()),
+            # Legacy names for 2D compatibility
             "r_min": float(coords[:, 0].min()),
             "r_max": float(coords[:, 0].max()),
             "z_min": float(coords[:, 1].min()),
             "z_max": float(coords[:, 1].max())
         }
+        if mesh_dim == 3:
+            mesh_bounds["z_min"] = float(coords[:, 2].min())
+            mesh_bounds["z_max"] = float(coords[:, 2].max())
 
         # Generate evaluation points based on mode
         if mode == "radial":
@@ -298,11 +307,11 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
         data = {}
         valid_mask = np.ones(n_points, dtype=bool)
 
-        # Evaluate field at all points
+        # Evaluate field at all points (works for both 2D and 3D)
         field_values = np.zeros(n_points)
         for i, pt in enumerate(points):
             try:
-                field_values[i] = field(pt[0], pt[1])
+                field_values[i] = field(*pt)
             except RuntimeError:
                 # Point outside mesh
                 field_values[i] = np.nan
@@ -316,7 +325,7 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
             grad_values = np.zeros(n_points)
             for i, pt in enumerate(points):
                 try:
-                    grad_vec = field_grad(pt[0], pt[1])
+                    grad_vec = field_grad(*pt)
                     grad_values[i] = np.linalg.norm(grad_vec)
                 except RuntimeError:
                     grad_values[i] = np.nan
@@ -329,7 +338,7 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
                 density_values = np.zeros(n_points)
                 for i, pt in enumerate(points):
                     try:
-                        density_values[i] = density(pt[0], pt[1])
+                        density_values[i] = density(*pt)
                     except RuntimeError:
                         density_values[i] = np.nan
                 data["density"] = density_values.tolist()
@@ -344,7 +353,7 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
                 adiabatic_values = np.zeros(n_points)
                 for i, pt in enumerate(points):
                     try:
-                        rho = density(pt[0], pt[1])
+                        rho = density(*pt)
                         density_values[i] = rho
                         # Avoid division by zero
                         if rho > 0:
@@ -364,8 +373,8 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
                 deviation_values = np.zeros(n_points)
                 for i, pt in enumerate(points):
                     try:
-                        phi = field(pt[0], pt[1])
-                        rho = density(pt[0], pt[1])
+                        phi = field(*pt)
+                        rho = density(*pt)
                         if rho > 0:
                             phi_adiabatic = pow(rho, -1.0 / (n_power + 1))
                             if phi_adiabatic > 0:
@@ -493,13 +502,14 @@ async def _handle_max_in_region(
             source_markers = [regions[min_distance_from]]
             exclude_regions_desc = min_distance_from
 
-    # Collect cell centers in target region
+    # Collect cell centers in target region (works for both 2D and 3D)
+    mesh_dim = mesh.geometry().dim()
     target_cells = []
     target_centers = []
     for cell in d.cells(mesh):
         if subdomains[cell] == target_marker:
             target_cells.append(cell.index())
-            target_centers.append(cell.midpoint().array()[:2])
+            target_centers.append(cell.midpoint().array()[:mesh_dim])
 
     target_centers = np.array(target_centers)
 
@@ -530,7 +540,7 @@ async def _handle_max_in_region(
 
         # Get coordinates of unique vertices
         coords = mesh.coordinates()
-        source_boundary_points = coords[list(source_vertex_indices), :2]
+        source_boundary_points = coords[list(source_vertex_indices), :mesh_dim]
 
         # Filter target points by distance from source boundaries using KD-tree
         # This is O(N log M) instead of O(N × M) for the naive approach
@@ -558,11 +568,11 @@ async def _handle_max_in_region(
 
     n_valid = len(sample_points)
 
-    # Evaluate quantities at sample points
+    # Evaluate quantities at sample points (works for both 2D and 3D)
     data = {}
 
     # Field values
-    field_values = np.array([field(pt[0], pt[1]) for pt in sample_points])
+    field_values = np.array([field(*pt) for pt in sample_points])
 
     if "field" in quantities:
         max_idx = np.argmax(field_values)
@@ -577,7 +587,7 @@ async def _handle_max_in_region(
 
     # Gradient magnitude (compute on-the-fly from gradient vector)
     if "gradient_magnitude" in quantities and field_grad is not None:
-        grad_values = np.array([np.linalg.norm(field_grad(pt[0], pt[1])) for pt in sample_points])
+        grad_values = np.array([np.linalg.norm(field_grad(*pt)) for pt in sample_points])
 
         max_idx = np.argmax(grad_values)
         min_idx = np.argmin(grad_values)

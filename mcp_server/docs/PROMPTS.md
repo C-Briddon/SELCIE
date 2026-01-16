@@ -290,12 +290,39 @@
 >
 > Setup:
 > - Fixed volume of 0.01
-> - 20 equally spaced theta values 
 > - Vacuum chamber radius 1.0, wall thickness 0.05
 > - Use α = 1e18 and n = 1
 > - Source density: 1e17
 > - Vacuum density: 1.0
 > 
-> Find the optimal fifth force at a minimum distance of 0.05 from the source and wall
+> Find the optimal fifth force at a minimum distance of 0.05 from the source and wall.
 > 
 > Explain your reasoning process. Save the results in an optimal directory. 
+
+ ### Step file (Eot-Wash type experiment)
+
+> Generate a STEP file using GMSH for the following geometry:
+>
+>  Two parallel circular disks with holes, used for gravitational force measurements:
+>
+>  Disk parameters:
+>  - Outer radius: 0.5
+>  - Thickness: 0.05
+>  - Number of holes: 10 (arranged in a circle)
+>  - Hole radius: 0.08
+>  - Hole pattern radius: 0.3 (distance from disk center to hole centers)
+>
+>  Arrangement:
+>  - Disk 1 centered at z = 0.2
+>  - Disk 2 centered at z = -0.2
+>  - Both disks aligned on the z-axis
+>  - Holes in disk 2 rotated by 18 degrees relative to disk 1
+>
+> Then solve the chamleleon field for this with the following parameters: 
+>
+> - Vaccum radius: 1.0
+> - Use α = 1e18 and n = 1
+> - Source density: 1e17
+> - Vacuum density: 1.0
+>
+> Plot slices of the field and gradient at different z values.

@@ -466,6 +466,72 @@ class TestCreateMeshCustom2D:
         assert data["error"]["code"] == "MISSING_PARAMS"
 
 
+class TestCreateMeshCustomStep:
+    """Test custom_step geometry (STEP file import)."""
+
+    @pytest.fixture(autouse=True)
+    def reset(self):
+        reset_session()
+
+    @pytest.mark.asyncio
+    async def test_custom_step_basic(self):
+        """Import a STEP file and create mesh."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "custom_step",
+            "params": {
+                "step_file": "tests/test_data/eotwash_disks.step",
+                "domain_radius": 3.0,
+            },
+            "mesh_quality": "very_coarse",
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" not in data, f"Unexpected error: {data}"
+        assert data["geometry"] == "custom_step"
+        assert data["symmetry"] == "none"
+        assert data["dimension"] == 3
+        assert "object" in data["regions"]
+        assert "vacuum" in data["regions"]
+        assert "object_bounds" in data["domain_bounds"]
+        assert data["domain_bounds"]["imported_file"] == "eotwash_disks.step"
+
+    @pytest.mark.asyncio
+    async def test_custom_step_file_not_found(self):
+        """Missing STEP file should error."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "custom_step",
+            "params": {
+                "step_file": "nonexistent.step",
+                "domain_radius": 2.0,
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert "not found" in data["error"]["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_custom_step_missing_params(self):
+        """Missing required params should error."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "custom_step",
+            "params": {
+                "step_file": "tests/test_data/eotwash_disks.step",
+                # missing domain_radius
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "MISSING_PARAMS"
+
+
 class TestCreateMeshNotImplemented:
     """Test unimplemented geometries."""
 

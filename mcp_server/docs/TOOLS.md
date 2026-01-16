@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-01-15 21:01_
+_Generated: 2026-01-16 19:33_
 
 ---
 
@@ -64,7 +64,7 @@ IMPORTANT: For thin-shell problems (high α, high density contrast), provide phy
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `geometry` | `sphere_in_vacuum` | `ellipse_in_vacuum` | `cylinder_in_vacuum` | `shell_in_vacuum` | `two_spheres` | `sphere_near_wall` | `sphere_in_profile` | `box_2d` | `box_3d` | `disk` | `sphere_domain` | `parallel_plates` | `custom_2d_axial` | `custom_2d_translation` | `custom_3d` | Yes | Geometry template. Choose based on physical setup:
+| `geometry` | `sphere_in_vacuum` | `ellipse_in_vacuum` | `cylinder_in_vacuum` | `shell_in_vacuum` | `two_spheres` | `sphere_near_wall` | `sphere_in_profile` | `box_2d` | `box_3d` | `disk` | `sphere_domain` | `parallel_plates` | `custom_2d_axial` | `custom_2d_translation` | `custom_3d` | `custom_step` | Yes | Geometry template. Choose based on physical setup:
 
 OBJECT-IN-VACUUM (screening/force calculations):
 - sphere_in_vacuum: Spherical source in vacuum. Regions: object, vacuum [+wall]. Fixed symmetry: axial (2D). 'r' = spherical radius.
@@ -87,12 +87,13 @@ PLAIN DOMAINS (no interior object):
 CUSTOM SHAPES:
 - custom_2d_axial: Arbitrary 2D axisymmetric shape. Points are [r, z] with r >= 0, revolved around z-axis. Regions: object, vacuum [+wall]. Fixed symmetry: axial (2D).
 - custom_2d_translation: Arbitrary 2D shape with translation symmetry. Points are [x, y], extruded in z. Regions: object, vacuum [+wall]. Fixed symmetry: translation (2D).
-- custom_3d: Arbitrary 3D shape from contours. Regions: object. Fixed symmetry: none (true 3D). |
+- custom_3d: Arbitrary 3D shape from contours. Regions: object. Fixed symmetry: none (true 3D).
+- custom_step: Import 3D geometry from STEP/IGES/BREP file. Object is centered in spherical vacuum domain. Regions: object, vacuum. Fixed symmetry: none (true 3D). |
 | `params` | object | Yes | Geometry-specific parameters. |
 | `mesh_quality` | `very_coarse` | `coarse` | `medium` | `fine` | `very_fine` | No | Mesh resolution. Default: `"medium"` |
 | `custom_id` | string | No | Custom mesh ID. |
 | `allow_large_mesh` | boolean | No | Allow meshes exceeding 200,000 cells. Default: false. Default: `False` |
-| `physics_params` | object | No | Physics parameters for automatic thin-shell mesh refinement. Option 1: Provide 'lambda' dict mapping region names to Compton wavelengths. Option 2: Provide 'alpha', 'density' dict, and 'n' - lambdas will be computed per region. The mesh will be refined near boundaries of dense regions to resolve thin shells. |
+| `physics_params` | object | No | Physics parameters for automatic thin-shell mesh refinement (recommended when available). Option 1: Provide 'lambda' dict mapping region names to Compton wavelengths. Option 2: Provide 'alpha', 'density' dict, and 'n' - lambdas will be computed per region. The mesh will be refined near boundaries of dense regions to resolve thin shells. |
 
 #### `params` options
 
@@ -116,6 +117,7 @@ CUSTOM SHAPES:
 - **`shape_file`** (string): Path to file with shape points (custom_2d_axial, custom_2d_translation)
 - **`contour_file`** (string): Path to 3D contour file (custom_3d)
 - **`contours`** (array[any]): List of contour point lists for custom_3d
+- **`step_file`** (string): Path to STEP/IGES/BREP file (custom_step)
 - **`plate_separation`** (number): Gap between inner surfaces of plates (parallel_plates)
 - **`plate_thickness`** (number): Thickness of each plate (parallel_plates)
 
@@ -201,12 +203,15 @@ Generate visualizations of chameleon field solutions.
 
 Plot types:
 - field_1d: Radial field profile φ(r)
-- field_2d: 2D colormap of field
+- field_2d: 2D colormap of field (2D meshes only)
 - force_1d: Radial gradient magnitude |∇φ|(r)
-- force_2d: 2D colormap of gradient magnitude
+- force_2d: 2D colormap of gradient magnitude (2D meshes only)
 - comparison: Compare multiple solutions on same plot
 - density or density_1d: Radial density profile ρ̂(r) with optional adiabatic field overlay
-- density_2d: 2D colormap of density
+- density_2d: 2D colormap of density (2D meshes only)
+- slice_xy: 2D slice through 3D field in xy-plane at given z
+- slice_xz: 2D slice through 3D field in xz-plane at given y
+- slice_yz: 2D slice through 3D field in yz-plane at given x
 
 Returns PNG image (base64 or saved to file).
 
@@ -215,7 +220,7 @@ Returns PNG image (base64 or saved to file).
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `solution_id` | string | array[string] | Yes | Solution ID(s) to plot |
-| `plot_type` | `field_1d` | `field_2d` | `force_1d` | `force_2d` | `comparison` | `density` | `density_1d` | `density_2d` | Yes | Type of plot to generate |
+| `plot_type` | `field_1d` | `field_2d` | `force_1d` | `force_2d` | `comparison` | `density` | `density_1d` | `density_2d` | `slice_xy` | `slice_xz` | `slice_yz` | Yes | Type of plot to generate |
 | `options` | object | No | Plot customization options |
 | `output_path` | string | No | Save to file path. If not provided, returns base64 image |
 | `format` | `png` | `pdf` | `svg` | No | Output format. Default: png Default: `"png"` |
@@ -229,10 +234,12 @@ Returns PNG image (base64 or saved to file).
 - **`n_points`** (integer): Number of sample points for 1D
 - **`r_min`** (number): Minimum radius for 1D
 - **`r_max`** (number): Maximum radius for 1D
-- **`quantity`** (string): Quantity to plot (comparison mode)
+- **`quantity`** (`field` | `gradient_magnitude` | `density`): Quantity to plot in slice (default: field)
 - **`legend_by`** (string): Label legend by this field
 - **`figsize`** (array[number]): 
 - **`title`** (string): Custom title
+- **`slice_position`** (number): Position of slice plane (default: 0)
+- **`n_grid`** (integer): Grid resolution for slice sampling (default: 100)
 
 ---
 

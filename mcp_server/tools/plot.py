@@ -19,12 +19,15 @@ TOOL_DEFINITION = Tool(
 
 Plot types:
 - field_1d: Radial field profile φ(r)
-- field_2d: 2D colormap of field
+- field_2d: 2D colormap of field (2D meshes only)
 - force_1d: Radial gradient magnitude |∇φ|(r)
-- force_2d: 2D colormap of gradient magnitude
+- force_2d: 2D colormap of gradient magnitude (2D meshes only)
 - comparison: Compare multiple solutions on same plot
 - density or density_1d: Radial density profile ρ̂(r) with optional adiabatic field overlay
-- density_2d: 2D colormap of density
+- density_2d: 2D colormap of density (2D meshes only)
+- slice_xy: 2D slice through 3D field in xy-plane at given z
+- slice_xz: 2D slice through 3D field in xz-plane at given y
+- slice_yz: 2D slice through 3D field in yz-plane at given x
 
 Returns PNG image (base64 or saved to file).
 """,
@@ -40,7 +43,7 @@ Returns PNG image (base64 or saved to file).
             },
             "plot_type": {
                 "type": "string",
-                "enum": ["field_1d", "field_2d", "force_1d", "force_2d", "comparison", "density", "density_1d", "density_2d"],
+                "enum": ["field_1d", "field_2d", "force_1d", "force_2d", "comparison", "density", "density_1d", "density_2d", "slice_xy", "slice_xz", "slice_yz"],
                 "description": "Type of plot to generate"
             },
             "options": {
@@ -57,7 +60,10 @@ Returns PNG image (base64 or saved to file).
                     "quantity": {"type": "string", "description": "Quantity to plot (comparison mode)"},
                     "legend_by": {"type": "string", "description": "Label legend by this field"},
                     "figsize": {"type": "array", "items": {"type": "number"}},
-                    "title": {"type": "string", "description": "Custom title"}
+                    "title": {"type": "string", "description": "Custom title"},
+                    "slice_position": {"type": "number", "description": "Position of slice plane (default: 0)"},
+                    "n_grid": {"type": "integer", "description": "Grid resolution for slice sampling (default: 100)"},
+                    "quantity": {"type": "string", "enum": ["field", "gradient_magnitude", "density"], "description": "Quantity to plot in slice (default: field)"}
                 }
             },
             "output_path": {
@@ -506,6 +512,126 @@ def _plot_density_2d(data, options, ax):
     ax.set_aspect('equal')
 
 
+def _plot_slice(data, options, ax, plane: str):
+    """Create 2D slice plot through 3D field.
+
+    Args:
+        data: Solution data dict with mesh, field, field_grad, density
+        options: Plot options dict
+        ax: Matplotlib axis
+        plane: One of 'xy', 'xz', 'yz'
+    """
+    mesh = data["mesh"]
+    field = data["field"]
+    field_grad = data.get("field_grad")
+    density = data.get("density")
+
+    # Check mesh is 3D
+    coords = mesh.coordinates()
+    if coords.shape[1] != 3:
+        ax.text(0.5, 0.5, f"Slice plots require 3D mesh\n(this mesh is {coords.shape[1]}D)",
+                ha='center', va='center', transform=ax.transAxes)
+        return
+
+    # Get options
+    slice_pos = options.get("slice_position", 0.0)
+    n_grid = options.get("n_grid", 100)
+    colormap = options.get("colormap", "viridis")
+    log_scale = options.get("log_scale", False)
+    quantity = options.get("quantity", "field")
+
+    # Determine axis indices and bounds based on plane
+    if plane == "xy":
+        ax1_idx, ax2_idx, fixed_idx = 0, 1, 2
+        ax1_label, ax2_label = 'x', 'y'
+        fixed_label = 'z'
+    elif plane == "xz":
+        ax1_idx, ax2_idx, fixed_idx = 0, 2, 1
+        ax1_label, ax2_label = 'x', 'z'
+        fixed_label = 'y'
+    elif plane == "yz":
+        ax1_idx, ax2_idx, fixed_idx = 1, 2, 0
+        ax1_label, ax2_label = 'y', 'z'
+        fixed_label = 'x'
+    else:
+        ax.text(0.5, 0.5, f"Unknown plane: {plane}", ha='center', va='center', transform=ax.transAxes)
+        return
+
+    # Get mesh bounds
+    ax1_min, ax1_max = coords[:, ax1_idx].min(), coords[:, ax1_idx].max()
+    ax2_min, ax2_max = coords[:, ax2_idx].min(), coords[:, ax2_idx].max()
+
+    # Create sampling grid
+    ax1_vals = np.linspace(ax1_min * 0.95, ax1_max * 0.95, n_grid)
+    ax2_vals = np.linspace(ax2_min * 0.95, ax2_max * 0.95, n_grid)
+    ax1_grid, ax2_grid = np.meshgrid(ax1_vals, ax2_vals)
+
+    # Sample field on grid
+    values = np.full_like(ax1_grid, np.nan)
+
+    for i in range(n_grid):
+        for j in range(n_grid):
+            # Construct 3D point
+            point = [0.0, 0.0, 0.0]
+            point[ax1_idx] = ax1_vals[j]
+            point[ax2_idx] = ax2_vals[i]
+            point[fixed_idx] = slice_pos
+
+            try:
+                if quantity == "field":
+                    values[i, j] = field(*point)
+                elif quantity == "gradient_magnitude" and field_grad is not None:
+                    grad_vec = field_grad(*point)
+                    values[i, j] = np.linalg.norm(grad_vec)
+                elif quantity == "density" and density is not None:
+                    values[i, j] = density(*point)
+            except RuntimeError:
+                pass  # Point outside mesh
+
+    # Check if we got any valid values
+    if np.all(np.isnan(values)):
+        ax.text(0.5, 0.5, f"No valid points in slice at {fixed_label}={slice_pos}\n"
+                f"Mesh bounds: {fixed_label} ∈ [{coords[:, fixed_idx].min():.3f}, {coords[:, fixed_idx].max():.3f}]",
+                ha='center', va='center', transform=ax.transAxes)
+        return
+
+    # Apply log scale if requested
+    if quantity == "field":
+        cbar_label = 'φ'
+    elif quantity == "gradient_magnitude":
+        cbar_label = '|∇φ|'
+    elif quantity == "density":
+        cbar_label = 'ρ̂'
+    else:
+        cbar_label = quantity
+
+    if log_scale and np.nanmin(values) > 0:
+        values = np.log10(values)
+        cbar_label = f'log₁₀({cbar_label})'
+
+    # Plot using contourf for smoother appearance (like 2D plots)
+    # Mask NaN values for contourf
+    valid_mask = ~np.isnan(values)
+    if np.any(valid_mask):
+        vmin, vmax = np.nanmin(values), np.nanmax(values)
+        levels = np.linspace(vmin, vmax, 100)
+        cf = ax.contourf(ax1_grid, ax2_grid, values, levels=levels, cmap=colormap, extend='both')
+        cbar = ax.figure.colorbar(cf, ax=ax, label=cbar_label)
+    else:
+        # Fallback to imshow if contourf fails
+        im = ax.imshow(values, extent=[ax1_min, ax1_max, ax2_min, ax2_max],
+                       origin='lower', cmap=colormap, aspect='equal')
+        cbar = ax.figure.colorbar(im, ax=ax, label=cbar_label)
+
+    ax.set_aspect('equal')
+
+    ax.set_xlabel(ax1_label, fontsize=11)
+    ax.set_ylabel(ax2_label, fontsize=11)
+    alpha_val = data['solution_info'].alpha
+    alpha_str = f"{alpha_val:.2e}" if alpha_val >= 1e4 else f"{alpha_val:.2f}"
+    ax.set_title(f"{quantity.replace('_', ' ').title()} slice at {fixed_label}={slice_pos:.3f} (α={alpha_str})", fontsize=12)
+
+
 async def handle(arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
     """Handle plot tool calls."""
     import matplotlib
@@ -528,9 +654,13 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
             solution_ids = solution_id
 
         # Determine if we need gradient or density data
+        is_slice = plot_type.startswith("slice_")
+        slice_quantity = options.get("quantity", "field") if is_slice else None
         need_grad = plot_type in ("force_1d", "force_2d") or \
-                    (plot_type == "comparison" and options.get("quantity") == "gradient_magnitude")
-        need_density = plot_type in ("density", "density_1d", "density_2d")
+                    (plot_type == "comparison" and options.get("quantity") == "gradient_magnitude") or \
+                    (is_slice and slice_quantity == "gradient_magnitude")
+        need_density = plot_type in ("density", "density_1d", "density_2d") or \
+                       (is_slice and slice_quantity == "density")
 
         # Load solution data
         solutions_data = []
@@ -572,6 +702,12 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
             _plot_density_1d(solutions_data[0], options, ax)
         elif plot_type == "density_2d":
             _plot_density_2d(solutions_data[0], options, ax)
+        elif plot_type == "slice_xy":
+            _plot_slice(solutions_data[0], options, ax, plane="xy")
+        elif plot_type == "slice_xz":
+            _plot_slice(solutions_data[0], options, ax, plane="xz")
+        elif plot_type == "slice_yz":
+            _plot_slice(solutions_data[0], options, ax, plane="yz")
         else:
             return [TextContent(type="text", text=json.dumps({
                 "error": {
