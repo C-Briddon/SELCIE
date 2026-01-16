@@ -497,6 +497,304 @@ class TestEvaluate:
         assert "error" in data
         assert data["error"]["code"] == "INVALID_QUANTITY"
 
+    @pytest.mark.asyncio
+    async def test_integrate_quantity_all(self, solution_id):
+        """Test integrate mode with quantity='all' returns force and torque."""
+        from tools.evaluate import handle
+
+        result = await handle({
+            "solution_id": solution_id,
+            "mode": "integrate",
+            "params": {
+                "region": "object",
+                "quantity": "all",
+            },
+        })
+
+        data = json.loads(result[0].text)
+
+        assert "error" not in data
+        assert data["quantity"] == "all"
+
+        # Force should be present
+        assert "F_r" in data["data"]
+        assert "F_z" in data["data"]
+        assert "F_magnitude" in data["data"]
+
+        # 2D axial mesh: torque is zero by symmetry
+        assert data["data"]["tau_x"] == 0.0
+        assert data["data"]["tau_y"] == 0.0
+        assert data["data"]["tau_z"] == 0.0
+        assert "torque_note" in data["data"]
+        assert "axial symmetry" in data["data"]["torque_note"]
+
+
+class TestEvaluateIntegrateTranslation:
+    """Test integrate mode with translation symmetry for τ_z calculation."""
+
+    @pytest.fixture(autouse=True)
+    def reset(self):
+        """Reset session before each test."""
+        reset_session()
+
+    @pytest_asyncio.fixture
+    async def solution_translation(self):
+        """Create a 2D mesh with translation symmetry and solve."""
+        from tools.create_mesh import handle as create_mesh
+        from tools.solve import handle as solve
+
+        # Create custom_2d_translation geometry (square object)
+        # Points define a square centered at origin
+        mesh_result = await create_mesh({
+            "geometry": "custom_2d_translation",
+            "params": {
+                "points": [[-0.1, -0.1], [0.1, -0.1], [0.1, 0.1], [-0.1, 0.1]],
+                "domain_radius": 1.0,
+            },
+            "mesh_quality": "very_coarse",
+        })
+        mesh_data = json.loads(mesh_result[0].text)
+
+        if "error" in mesh_data:
+            pytest.skip(f"Could not create mesh: {mesh_data['error']}")
+
+        mesh_id = mesh_data["mesh_id"]
+
+        # Solve
+        solve_result = await solve({
+            "mesh_id": mesh_id,
+            "alpha": 1.0,
+            "density": {
+                "object": 1e6,
+                "vacuum": 1.0,
+            },
+        })
+        solve_data = json.loads(solve_result[0].text)
+
+        if "error" in solve_data and solve_data.get("status") == "failed":
+            pytest.skip(f"Solve failed: {solve_data}")
+
+        return solve_data["solution_id"]
+
+    @pytest.mark.asyncio
+    async def test_integrate_torque_translation(self, solution_translation):
+        """Test integrate mode computes τ_z for translation symmetry."""
+        from tools.evaluate import handle
+
+        result = await handle({
+            "solution_id": solution_translation,
+            "mode": "integrate",
+            "params": {
+                "region": "object",
+                "quantity": "torque",
+            },
+        })
+
+        data = json.loads(result[0].text)
+
+        assert "error" not in data
+        assert data["symmetry"] == "translation"
+
+        # Only τ_z should be present (per unit length)
+        assert "tau_z" in data["data"]
+        assert "tau_magnitude" in data["data"]
+        assert "torque_origin" in data["data"]
+        assert "torque_note" in data["data"]
+        assert "translation symmetry" in data["data"]["torque_note"]
+
+        # τ_x, τ_y should NOT be present (not computed for translation)
+        assert "tau_x" not in data["data"]
+        assert "tau_y" not in data["data"]
+
+
+class TestEvaluateIntegrate3D:
+    """Test integrate mode with 3D meshes for torque calculations."""
+
+    @pytest.fixture(autouse=True)
+    def reset(self):
+        """Reset session before each test."""
+        reset_session()
+
+    @pytest_asyncio.fixture
+    async def solution_3d(self):
+        """Create a 3D mesh and solve to get a solution for testing torque."""
+        from tools.create_mesh import handle as create_mesh
+        from tools.solve import handle as solve
+
+        # Create 3D mesh using custom_step with unit cube
+        mesh_result = await create_mesh({
+            "geometry": "custom_step",
+            "params": {
+                "step_file": "tests/test_data/unit_cube.step",
+                "domain_radius": 3.0,
+            },
+            "mesh_quality": "very_coarse",
+        })
+        mesh_data = json.loads(mesh_result[0].text)
+
+        if "error" in mesh_data:
+            pytest.skip(f"Could not create 3D mesh: {mesh_data['error']}")
+
+        mesh_id = mesh_data["mesh_id"]
+
+        # Solve with low alpha to ensure convergence for 3D
+        solve_result = await solve({
+            "mesh_id": mesh_id,
+            "alpha": 0.01,
+            "density": {
+                "object": 100.0,
+                "vacuum": 1.0,
+            },
+        })
+        solve_data = json.loads(solve_result[0].text)
+
+        if "error" in solve_data and solve_data.get("status") == "failed":
+            pytest.skip(f"Solve failed: {solve_data}")
+
+        return solve_data["solution_id"]
+
+    @pytest.mark.asyncio
+    async def test_integrate_torque_3d(self, solution_3d):
+        """Test integrate mode computes torque for 3D mesh."""
+        from tools.evaluate import handle
+
+        result = await handle({
+            "solution_id": solution_3d,
+            "mode": "integrate",
+            "params": {
+                "region": "object",
+                "quantity": "torque",
+            },
+        })
+
+        data = json.loads(result[0].text)
+
+        assert "error" not in data
+        assert data["quantity"] == "torque"
+
+        # Torque components should be present
+        assert "tau_x" in data["data"]
+        assert "tau_y" in data["data"]
+        assert "tau_z" in data["data"]
+        assert "tau_magnitude" in data["data"]
+        assert "torque_origin" in data["data"]
+
+        # Default origin should be [0, 0, 0]
+        assert data["data"]["torque_origin"] == [0.0, 0.0, 0.0]
+
+    @pytest.mark.asyncio
+    async def test_integrate_torque_custom_origin(self, solution_3d):
+        """Test integrate mode with custom torque origin."""
+        from tools.evaluate import handle
+
+        result = await handle({
+            "solution_id": solution_3d,
+            "mode": "integrate",
+            "params": {
+                "region": "object",
+                "quantity": "torque",
+                "torque_origin": [0.5, 0.0, 0.0],
+            },
+        })
+
+        data = json.loads(result[0].text)
+
+        assert "error" not in data
+        assert data["data"]["torque_origin"] == [0.5, 0.0, 0.0]
+
+    @pytest.mark.asyncio
+    async def test_integrate_all_3d(self, solution_3d):
+        """Test integrate mode with quantity='all' returns force and torque for 3D."""
+        from tools.evaluate import handle
+
+        result = await handle({
+            "solution_id": solution_3d,
+            "mode": "integrate",
+            "params": {
+                "region": "object",
+                "quantity": "all",
+            },
+        })
+
+        data = json.loads(result[0].text)
+
+        assert "error" not in data
+        assert data["quantity"] == "all"
+
+        # Force should be present
+        assert "F_x" in data["data"]
+        assert "F_y" in data["data"]
+        assert "F_z" in data["data"]
+        assert "F_magnitude" in data["data"]
+
+        # Torque should also be present for 3D
+        assert "tau_x" in data["data"]
+        assert "tau_y" in data["data"]
+        assert "tau_z" in data["data"]
+        assert "tau_magnitude" in data["data"]
+
+    @pytest.mark.asyncio
+    async def test_integrate_with_bounds(self, solution_3d):
+        """Test integrate mode with bounds filtering."""
+        from tools.evaluate import handle
+
+        # First get full integration to compare
+        full_result = await handle({
+            "solution_id": solution_3d,
+            "mode": "integrate",
+            "params": {
+                "region": "object",
+                "quantity": "mass",
+            },
+        })
+        full_data = json.loads(full_result[0].text)
+        assert "error" not in full_data
+        full_mass = full_data["data"]["mass"]
+        full_cells = full_data["data"]["n_cells"]
+
+        # Now integrate with bounds (upper half only)
+        bounded_result = await handle({
+            "solution_id": solution_3d,
+            "mode": "integrate",
+            "params": {
+                "region": "object",
+                "quantity": "mass",
+                "bounds": {"z_min": 0.0},
+            },
+        })
+        bounded_data = json.loads(bounded_result[0].text)
+
+        assert "error" not in bounded_data
+        assert "bounds_applied" in bounded_data
+        assert bounded_data["bounds_applied"]["z_min"] == 0.0
+
+        # Bounded region should have fewer cells and less mass
+        bounded_mass = bounded_data["data"]["mass"]
+        bounded_cells = bounded_data["data"]["n_cells"]
+
+        assert bounded_cells < full_cells
+        assert bounded_mass < full_mass
+
+    @pytest.mark.asyncio
+    async def test_integrate_bounds_no_cells(self, solution_3d):
+        """Test integrate mode with bounds that exclude all cells."""
+        from tools.evaluate import handle
+
+        result = await handle({
+            "solution_id": solution_3d,
+            "mode": "integrate",
+            "params": {
+                "region": "object",
+                "quantity": "mass",
+                "bounds": {"z_min": 1000.0},  # Way outside object
+            },
+        })
+
+        data = json.loads(result[0].text)
+
+        assert "error" in data
+        assert data["error"]["code"] == "NO_CELLS_IN_BOUNDS"
+
 
 class TestEvaluateHelpers:
     """Test evaluate helper functions."""

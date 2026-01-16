@@ -59,6 +59,36 @@ TOOL_DEFINITION = Tool(
                 "default": 150,
                 "description": "Resolution in dots per inch.",
             },
+            "clip": {
+                "type": "object",
+                "description": "Clip plane for 3D meshes to show internal structure. Specify normal and origin.",
+                "properties": {
+                    "normal": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 3,
+                        "maxItems": 3,
+                        "description": "Normal vector of clip plane, e.g. [1, 0, 0] for x-plane.",
+                    },
+                    "origin": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 3,
+                        "maxItems": 3,
+                        "description": "Origin point of clip plane. Default: mesh center.",
+                    },
+                },
+            },
+            "opacity": {
+                "type": "number",
+                "default": 1.0,
+                "description": "Opacity for 3D mesh rendering (0-1). Use < 1 to see through outer surface.",
+            },
+            "show_regions": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Only show these regions (by name). E.g. ['object'] to hide vacuum. Default: show all.",
+            },
         },
         "required": ["mesh_id"],
     },
@@ -120,14 +150,150 @@ async def handle(arguments: dict) -> list[TextContent | ImageContent]:
 
     points = mesh.points[:, :2]
 
-    # Handle 3D meshes with tetrahedra
+    # Handle 3D meshes with tetrahedra using PyVista
     if "tetra" in mesh.cells_dict and "triangle" not in mesh.cells_dict:
-        n_tetra = len(mesh.cells_dict["tetra"])
-        ax.text(0.5, 0.5, f"3D mesh\n{n_tetra:,} tetrahedra\n(2D projection not shown)",
-                ha='center', va='center', transform=ax.transAxes, fontsize=12)
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
-        ax.set_title(custom_title or f"{mesh_id}: {mesh_info.geometry}")
+        plt.close(fig)  # Close the matplotlib figure, we'll use PyVista instead
+
+        try:
+            import pyvista as pv
+            pv.OFF_SCREEN = True
+
+            # Convert meshio mesh to PyVista
+            tetra = mesh.cells_dict["tetra"]
+            n_tetra = len(tetra)
+
+            # PyVista expects cells in format: [n_points, p0, p1, p2, p3, ...]
+            cells = np.hstack([
+                np.full((n_tetra, 1), 4, dtype=np.int64),
+                tetra
+            ]).ravel()
+
+            # Cell types: VTK_TETRA = 10
+            cell_types = np.full(n_tetra, 10, dtype=np.uint8)
+
+            pv_mesh = pv.UnstructuredGrid(cells, cell_types, mesh.points)
+
+            # Get subdomain data if available
+            cell_data = None
+            if mesh.cell_data:
+                for key in mesh.cell_data:
+                    for i, cell_block in enumerate(mesh.cells):
+                        if cell_block.type == "tetra":
+                            if key in mesh.cell_data and len(mesh.cell_data[key]) > i:
+                                cell_data = mesh.cell_data[key][i]
+                                break
+                    if cell_data is not None:
+                        break
+
+            if cell_data is not None:
+                pv_mesh.cell_data["Subdomain"] = cell_data
+
+            # Get clip, opacity, and region filter settings
+            clip_settings = arguments.get("clip")
+            opacity = arguments.get("opacity", 1.0)
+            show_regions = arguments.get("show_regions")
+
+            # Create plotter
+            plotter = pv.Plotter(off_screen=True, window_size=[int(figsize[0]*dpi), int(figsize[1]*dpi)])
+
+            # Filter by regions if specified
+            mesh_to_show = pv_mesh
+            if show_regions and cell_data is not None:
+                # Get marker values for requested regions
+                regions = mesh_info.regions
+                markers_to_show = []
+                for region_name in show_regions:
+                    if region_name in regions:
+                        markers_to_show.append(regions[region_name])
+
+                if markers_to_show:
+                    # Threshold to keep only cells with matching subdomain markers
+                    # For multiple values, we need to combine thresholds
+                    mask = np.isin(cell_data, markers_to_show)
+                    cell_indices = np.where(mask)[0]
+                    mesh_to_show = pv_mesh.extract_cells(cell_indices)
+
+            # Apply clipping if specified
+            if clip_settings:
+                normal = clip_settings.get("normal", [1, 0, 0])
+                origin = clip_settings.get("origin")
+                if origin is None:
+                    origin = mesh_to_show.center
+                mesh_to_show = mesh_to_show.clip(normal=normal, origin=origin)
+
+            # Add mesh with subdomain coloring
+            if cell_data is not None:
+                plotter.add_mesh(
+                    mesh_to_show,
+                    scalars="Subdomain",
+                    cmap=["#E8F4FD", "#4A90D9", "#2E5A8C", "#7CB342"],
+                    show_edges=show_edges,
+                    edge_color="#2C3E50",
+                    line_width=0.5 if show_edges else 0,
+                    show_scalar_bar=False,
+                    opacity=opacity,
+                )
+            else:
+                plotter.add_mesh(
+                    mesh_to_show,
+                    color="#4A90D9",
+                    show_edges=show_edges,
+                    edge_color="#2C3E50",
+                    line_width=0.5 if show_edges else 0,
+                    opacity=opacity,
+                )
+
+            # Set title
+            title = custom_title or f"{mesh_id}: {mesh_info.geometry} ({n_tetra:,} tetrahedra)"
+            plotter.add_text(title, font_size=12, position="upper_edge")
+
+            # Add axes
+            plotter.add_axes(labels_off=False)
+            plotter.camera_position = 'iso'
+
+            # Save or return image
+            if output_path:
+                plotter.screenshot(output_path)
+                plotter.close()
+                return [TextContent(type="text", text=json.dumps({
+                    "mesh_id": mesh_id,
+                    "plot_saved": output_path,
+                    "geometry": mesh_info.geometry,
+                    "n_cells": mesh_info.n_cells,
+                    "renderer": "pyvista",
+                }, indent=2))]
+            else:
+                # Save to temporary file and encode
+                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                    tmp_path = tmp.name
+                plotter.screenshot(tmp_path)
+                plotter.close()
+
+                with open(tmp_path, 'rb') as f:
+                    image_base64 = base64.standard_b64encode(f.read()).decode('utf-8')
+                os.unlink(tmp_path)
+
+                return [
+                    ImageContent(type="image", data=image_base64, mimeType="image/png"),
+                    TextContent(type="text", text=json.dumps({
+                        "mesh_id": mesh_id,
+                        "geometry": mesh_info.geometry,
+                        "n_cells": mesh_info.n_cells,
+                        "symmetry": mesh_info.symmetry,
+                        "renderer": "pyvista",
+                    }, indent=2))
+                ]
+
+        except ImportError:
+            # PyVista not available, show placeholder
+            fig, ax = plt.subplots(figsize=figsize)
+            n_tetra = len(mesh.cells_dict["tetra"])
+            ax.text(0.5, 0.5, f"3D mesh\n{n_tetra:,} tetrahedra\n\nInstall pyvista for 3D visualization:\npip install pyvista",
+                    ha='center', va='center', transform=ax.transAxes, fontsize=11)
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            ax.axis('off')
+            ax.set_title(custom_title or f"{mesh_id}: {mesh_info.geometry}")
     elif "triangle" not in mesh.cells_dict:
         ax.text(0.5, 0.5, "No triangles found in mesh",
                 ha='center', va='center', transform=ax.transAxes, fontsize=12)

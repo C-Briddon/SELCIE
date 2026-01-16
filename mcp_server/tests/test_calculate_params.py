@@ -152,3 +152,31 @@ class TestNFWDimensionless:
         assert lambda_min > 1  # >> 1
         assert regime == "transition"
         assert selcie_needed is True
+
+
+class TestTorqueScale:
+    """Test torque_scale_Nm output."""
+
+    @pytest.mark.asyncio
+    async def test_torque_scale_equals_force_times_length(self):
+        """Torque scale should equal force_scale × L."""
+        import json
+        from tools.calculate_physical_parameters import handle
+
+        result = await handle({
+            "beta": 1e6,
+            "rho_0": 1.0,
+            "rho_0_units": "g/cm^3",
+            "L": 0.1,
+            "L_units": "m",
+        })
+
+        data = json.loads(result[0].text)
+
+        assert "torque_scale_Nm" in data
+        assert "force_scale_N" in data
+
+        # torque_scale = force_scale × L (in meters)
+        L_m = 0.1  # L in meters
+        expected_torque_scale = data["force_scale_N"] * L_m
+        assert data["torque_scale_Nm"] == pytest.approx(expected_torque_scale, rel=1e-10)

@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-01-16 19:33_
+_Generated: 2026-01-16 22:31_
 
 ---
 
@@ -21,7 +21,7 @@ _Generated: 2026-01-16 19:33_
 
 ## calculate_physical_parameters
 
-Convert physical chameleon parameters to SELCIE's dimensionless α and assess the screening regime using the Compton wavelength criterion. Use this first to determine if SELCIE is needed or if analytic solutions suffice. Returns the dimensionless Compton wavelength λ̂(ρ̂) = √(α/(n+1)) × ρ̂^{-(n+2)/(2(n+1))} at the density extremes. Since λ̂ is in units of L, compare to 1: λ̂ << 1 means adiabatic (field tracks ρ̂^{-1/(n+1)}), λ̂ >> 1 means field is set by boundaries, λ̂ ~ 1 is the transition region where SELCIE is needed. Also returns conversion factors: grad_to_acceleration_g converts dimensionless ∇φ to acceleration in units of g; mass_scale_kg and force_scale_N convert integrate mode outputs to physical mass (kg) and force (N).
+Convert physical chameleon parameters to SELCIE's dimensionless α and assess the screening regime using the Compton wavelength criterion. Use this first to determine if SELCIE is needed or if analytic solutions suffice. Returns the dimensionless Compton wavelength λ̂(ρ̂) = √(α/(n+1)) × ρ̂^{-(n+2)/(2(n+1))} at the density extremes. Since λ̂ is in units of L, compare to 1: λ̂ << 1 means adiabatic (field tracks ρ̂^{-1/(n+1)}), λ̂ >> 1 means field is set by boundaries, λ̂ ~ 1 is the transition region where SELCIE is needed. Also returns conversion factors: grad_to_acceleration_g converts dimensionless ∇φ to acceleration in units of g; mass_scale_kg, force_scale_N, and torque_scale_Nm convert integrate mode outputs to physical mass (kg), force (N), and torque (N·m).
 
 ### Parameters
 
@@ -150,8 +150,10 @@ Quantities (for point-based modes):
 - field_deviation: (φ - φ_adiabatic) / φ_adiabatic
 
 Quantities (for integrate mode) - all in rescaled (dimensionless) units:
-- force: Total force F = ∫ρ̂∇φ̂ dV̂ on region (includes symmetry Jacobian). Multiply by force_scale_N from calculate_physical_parameters to get Newtons.
-- mass: Total mass M = ∫ρ̂ dV̂. Multiply by mass_scale_kg from calculate_physical_parameters to get kg.
+- force: Total force F = ∫ρ̂∇φ̂ dV̂ on region. Returns F_x, F_y (and F_z for 3D). Multiply by force_scale_N to get Newtons.
+- torque: Torque τ = ∫(r-r₀)×(ρ̂∇φ̂) dV̂ around torque_origin. Returns τ_x, τ_y, τ_z. Multiply by torque_scale_Nm to get Newton-meters.
+- mass: Total mass M = ∫ρ̂ dV̂. Multiply by mass_scale_kg to get kg.
+- bounds: Optional axis cuts (x_min, x_max, y_min, y_max, z_min, z_max) to restrict integration to a subregion (e.g., upper disk only).
 
 ### Parameters
 
@@ -177,7 +179,15 @@ Quantities (for integrate mode) - all in rescaled (dimensionless) units:
 - **`n_r`** (integer): Number of r points (grid)
 - **`n_z`** (integer): Number of z points (grid)
 - **`region`** (string): Region name (max_in_region, integrate). Default: vacuum
-- **`quantity`** (`force` | `mass`): Quantity to integrate (integrate mode). Default: force
+- **`quantity`** (`force` | `torque` | `mass` | `all`): Quantity to integrate (integrate mode). 'force' returns F components, 'torque' returns τ components, 'mass' returns only mass/volume, 'all' returns force+torque. Default: all
+- **`torque_origin`** (array[number]): Origin point for torque calculation [x, y, z] (integrate mode). Default: [0, 0, 0]
+- **`bounds`** (object): Axis cuts to restrict integration volume (integrate mode). Only cells with midpoint within bounds are included.
+  - **`x_min`** (number): 
+  - **`x_max`** (number): 
+  - **`y_min`** (number): 
+  - **`y_max`** (number): 
+  - **`z_min`** (number): 
+  - **`z_max`** (number): 
 - **`min_distance_from`** (string | array[string]): Region(s) to keep distance from (max_in_region). Can be: a region name, 'all' for all other regions, or a list of region names
 - **`min_distance`** (number): Minimum distance from boundary of exclusion region(s) (max_in_region)
 - **`n_samples`** (integer): Number of random samples (max_in_region). Default: 1000
@@ -257,6 +267,14 @@ Generate a visualization of a mesh showing the geometry and subdomain structure.
 | `output_path` | string | No | Save plot to this path. If not provided, returns base64-encoded image. |
 | `figsize` | array[number] | No | Figure size as [width, height] in inches. Default: `[8, 8]` |
 | `dpi` | integer | No | Resolution in dots per inch. Default: `150` |
+| `clip` | object | No | Clip plane for 3D meshes to show internal structure. Specify normal and origin. |
+| `opacity` | number | No | Opacity for 3D mesh rendering (0-1). Use < 1 to see through outer surface. Default: `1.0` |
+| `show_regions` | array[string] | No | Only show these regions (by name). E.g. ['object'] to hide vacuum. Default: show all. |
+
+#### `clip` options
+
+- **`normal`** (array[number]): Normal vector of clip plane, e.g. [1, 0, 0] for x-plane.
+- **`origin`** (array[number]): Origin point of clip plane. Default: mesh center.
 
 ---
 

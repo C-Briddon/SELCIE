@@ -400,7 +400,8 @@ async def handle(arguments: dict) -> list[TextContent]:
             final_residual=final_du_norm,
             field_min=field_min,
             field_max=field_max,
-            deg_V=deg_V
+            deg_V=deg_V,
+            symmetry=mesh_symmetry
         )
         session.add_solution(solution_info)
 

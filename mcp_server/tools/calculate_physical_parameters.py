@@ -33,7 +33,8 @@ TOOL_DEFINITION = Tool(
         "(field tracks ρ̂^{-1/(n+1)}), λ̂ >> 1 means field is set by boundaries, λ̂ ~ 1 is the "
         "transition region where SELCIE is needed. Also returns conversion factors: "
         "grad_to_acceleration_g converts dimensionless ∇φ to acceleration in units of g; "
-        "mass_scale_kg and force_scale_N convert integrate mode outputs to physical mass (kg) and force (N)."
+        "mass_scale_kg, force_scale_N, and torque_scale_Nm convert integrate mode outputs to "
+        "physical mass (kg), force (N), and torque (N·m)."
     ),
     inputSchema={
         "type": "object",
@@ -200,6 +201,10 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
     # This is ρ₀ × L³ × g × conv_fifth_force_chameleon
     force_scale = mass_scale * G_STANDARD * force_conversion
 
+    # Torque scale: τ_physical = torque_scale × torque_rescaled [N·m]
+    # Torque has dimensions [Force × Length]
+    torque_scale = force_scale * L_si
+
     # Build result
     result: dict[str, Any] = {
         "alpha": alpha,
@@ -208,10 +213,12 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
         "grad_to_acceleration_note": "Multiply dimensionless grad(phi) by this to get acceleration in units of g (9.81 m/s²)",
         "mass_scale_kg": mass_scale,
         "force_scale_N": force_scale,
+        "torque_scale_Nm": torque_scale,
         "integral_scaling_note": (
             "For evaluate(..., mode='integrate'): "
             "M_physical[kg] = mass_scale_kg × mass, "
-            "F_physical[N] = force_scale_N × force"
+            "F_physical[N] = force_scale_N × F, "
+            "τ_physical[N·m] = torque_scale_Nm × τ"
         ),
     }
 

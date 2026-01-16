@@ -31,8 +31,10 @@ Quantities (for point-based modes):
 - field_deviation: (φ - φ_adiabatic) / φ_adiabatic
 
 Quantities (for integrate mode) - all in rescaled (dimensionless) units:
-- force: Total force F = ∫ρ̂∇φ̂ dV̂ on region (includes symmetry Jacobian). Multiply by force_scale_N from calculate_physical_parameters to get Newtons.
-- mass: Total mass M = ∫ρ̂ dV̂. Multiply by mass_scale_kg from calculate_physical_parameters to get kg.
+- force: Total force F = ∫ρ̂∇φ̂ dV̂ on region. Returns F_x, F_y (and F_z for 3D). Multiply by force_scale_N to get Newtons.
+- torque: Torque τ = ∫(r-r₀)×(ρ̂∇φ̂) dV̂ around torque_origin. Returns τ_x, τ_y, τ_z. Multiply by torque_scale_Nm to get Newton-meters.
+- mass: Total mass M = ∫ρ̂ dV̂. Multiply by mass_scale_kg to get kg.
+- bounds: Optional axis cuts (x_min, x_max, y_min, y_max, z_min, z_max) to restrict integration to a subregion (e.g., upper disk only).
 """,
     inputSchema={
         "type": "object",
@@ -63,7 +65,17 @@ Quantities (for integrate mode) - all in rescaled (dimensionless) units:
                     "n_r": {"type": "integer", "description": "Number of r points (grid)"},
                     "n_z": {"type": "integer", "description": "Number of z points (grid)"},
                     "region": {"type": "string", "description": "Region name (max_in_region, integrate). Default: vacuum"},
-                    "quantity": {"type": "string", "enum": ["force", "mass"], "description": "Quantity to integrate (integrate mode). Default: force"},
+                    "quantity": {"type": "string", "enum": ["force", "torque", "mass", "all"], "description": "Quantity to integrate (integrate mode). 'force' returns F components, 'torque' returns τ components, 'mass' returns only mass/volume, 'all' returns force+torque. Default: all"},
+                    "torque_origin": {"type": "array", "items": {"type": "number"}, "description": "Origin point for torque calculation [x, y, z] (integrate mode). Default: [0, 0, 0]"},
+                    "bounds": {
+                        "type": "object",
+                        "description": "Axis cuts to restrict integration volume (integrate mode). Only cells with midpoint within bounds are included.",
+                        "properties": {
+                            "x_min": {"type": "number"}, "x_max": {"type": "number"},
+                            "y_min": {"type": "number"}, "y_max": {"type": "number"},
+                            "z_min": {"type": "number"}, "z_max": {"type": "number"}
+                        }
+                    },
                     "min_distance_from": {
                         "oneOf": [
                             {"type": "string"},
@@ -134,6 +146,69 @@ def _generate_grid_points(params: dict) -> tuple[np.ndarray, np.ndarray, np.ndar
 
     points = np.column_stack([R.ravel(), Z.ravel()])
     return points, r, z
+
+
+def _evaluate_gradient_locally(field, point, mesh, tree=None):
+    """Evaluate gradient at a point using local basis function derivatives.
+
+    This avoids global projection by computing the gradient directly from
+    the element's shape function derivatives at the given point. Benefits:
+    - Memory efficient: no global linear system solve
+    - More accurate: gives exact gradient (not L2-projected/smoothed)
+    - Faster for small numbers of points
+
+    Args:
+        field: FEniCS Function
+        point: array-like coordinates
+        mesh: FEniCS Mesh
+        tree: Optional pre-built BoundingBoxTree for efficiency
+
+    Returns:
+        numpy array of gradient components, or NaN if point outside mesh
+    """
+    import dolfin as d
+
+    dim = mesh.geometry().dim()
+    point = np.asarray(point, dtype=float)
+
+    # Build or reuse bounding box tree
+    if tree is None:
+        tree = mesh.bounding_box_tree()
+
+    # Find cell containing point
+    point_obj = d.Point(*point[:dim])
+    cell_id = tree.compute_first_entity_collision(point_obj)
+
+    # Check if point is outside mesh (returns UINT_MAX = 2^32 - 1)
+    if cell_id >= mesh.num_cells():
+        return np.array([np.nan] * dim)
+
+    cell = d.Cell(mesh, cell_id)
+
+    # Get function space info
+    V = field.function_space()
+    element = V.element()
+    dofmap = V.dofmap()
+
+    # Get DOFs and values for this cell
+    cell_dofs = dofmap.cell_dofs(cell_id)
+    dof_values = field.vector().get_local()[cell_dofs]
+
+    # Get cell vertex coordinates
+    coordinate_dofs = np.array(cell.get_vertex_coordinates(), dtype=float)
+
+    # Number of basis functions
+    n_basis = element.space_dimension()
+
+    # Evaluate all basis function derivatives at the point
+    # Returns array of shape [n_basis * dim] with first derivatives
+    derivs = element.evaluate_basis_derivatives_all(1, point, coordinate_dofs, cell.orientation())
+    basis_derivatives = derivs.reshape(n_basis, dim)
+
+    # Gradient = sum over basis functions: value_i * grad(basis_i)
+    gradient = np.dot(dof_values, basis_derivatives)
+
+    return gradient
 
 
 async def handle(arguments: dict[str, Any]) -> list[TextContent]:
@@ -218,12 +293,8 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
             except Exception:
                 density = None
 
-        # Compute gradient directly from field (more accurate than loading pre-computed)
-        field_grad = None
-        if "gradient_magnitude" in quantities:
-            # Project grad(field) onto vector space with same degree
-            V_vec = d.VectorFunctionSpace(mesh, "CG", deg_V)
-            field_grad = d.project(d.grad(field), V_vec)
+        # Build bounding box tree for efficient point location (used by local gradient eval)
+        tree = mesh.bounding_box_tree()
 
         # Get mesh dimension and bounds
         coords = mesh.coordinates()
@@ -288,7 +359,7 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
             position_key = "grid"
         elif mode == "max_in_region":
             return await _handle_max_in_region(
-                arguments, mesh, field, field_grad, mesh_info, solution_info, mesh_bounds
+                arguments, mesh, field, mesh_info, solution_info, mesh_bounds
             )
         elif mode == "integrate":
             return await _handle_integrate(
@@ -320,15 +391,12 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
         if "field" in quantities:
             data["field"] = field_values.tolist()
 
-        # Evaluate gradient magnitude (compute on-the-fly from gradient vector)
-        if "gradient_magnitude" in quantities and field_grad is not None:
+        # Evaluate gradient magnitude using local evaluation (no projection needed)
+        if "gradient_magnitude" in quantities:
             grad_values = np.zeros(n_points)
             for i, pt in enumerate(points):
-                try:
-                    grad_vec = field_grad(*pt)
-                    grad_values[i] = np.linalg.norm(grad_vec)
-                except RuntimeError:
-                    grad_values[i] = np.nan
+                grad_vec = _evaluate_gradient_locally(field, pt, mesh, tree)
+                grad_values[i] = np.linalg.norm(grad_vec)
 
             data["gradient_magnitude"] = grad_values.tolist()
 
@@ -426,13 +494,15 @@ async def _handle_max_in_region(
     arguments: dict[str, Any],
     mesh,
     field,
-    field_grad,
     mesh_info,
     solution_info,
     mesh_bounds: dict
 ) -> list[TextContent]:
     """Handle max_in_region mode."""
     import dolfin as d
+
+    # Build bounding box tree for local gradient evaluation
+    bb_tree = mesh.bounding_box_tree()
 
     params = arguments.get("params", {})
     quantities = arguments.get("quantities", ["field", "gradient_magnitude"])
@@ -585,9 +655,12 @@ async def _handle_max_in_region(
             "mean": float(np.mean(field_values))
         }
 
-    # Gradient magnitude (compute on-the-fly from gradient vector)
-    if "gradient_magnitude" in quantities and field_grad is not None:
-        grad_values = np.array([np.linalg.norm(field_grad(*pt)) for pt in sample_points])
+    # Gradient magnitude using local evaluation (no projection needed)
+    if "gradient_magnitude" in quantities:
+        grad_values = np.array([
+            np.linalg.norm(_evaluate_gradient_locally(field, pt, mesh, bb_tree))
+            for pt in sample_points
+        ])
 
         max_idx = np.argmax(grad_values)
         min_idx = np.argmin(grad_values)
@@ -622,24 +695,28 @@ async def _handle_integrate(
 ) -> list[TextContent]:
     """Handle integrate mode - compute volume integrals over a region.
 
-    Computes total force F = ∫ρ∇φ dV and mass M = ∫ρ dV over a named region.
+    Computes total force F = ∫ρ∇φ dV, torque τ = ∫(r-r₀)×(ρ∇φ) dV, and mass M = ∫ρ dV.
+    Supports optional bounds filtering to restrict integration to a subregion.
     Handles symmetry correctly:
     - axial: includes 2πr Jacobian for revolution
     - translation: result is per unit length in z
+    - 3D: no Jacobian factor
     """
     import dolfin as d
     from math import pi, sqrt
 
     params = arguments.get("params", {})
     region = params.get("region", "vacuum")
-    quantity = params.get("quantity", "force")
+    quantity = params.get("quantity", "all")
+    torque_origin = params.get("torque_origin", [0.0, 0.0, 0.0])
+    bounds = params.get("bounds", {})
 
     # Validate quantity
-    if quantity not in ["force", "mass"]:
+    if quantity not in ["force", "torque", "mass", "all"]:
         return [TextContent(type="text", text=json.dumps({
             "error": {
                 "code": "INVALID_QUANTITY",
-                "message": f"Invalid quantity '{quantity}'. Must be 'force' or 'mass'."
+                "message": f"Invalid quantity '{quantity}'. Must be 'force', 'torque', 'mass', or 'all'."
             }
         }, indent=2))]
 
@@ -684,25 +761,87 @@ async def _handle_integrate(
     with d.HDF5File(mesh.mpi_comm(), density_file, "r") as f:
         f.read(density, "density")
 
-    # Get symmetry from solution info
+    # Get symmetry and mesh dimension
     symmetry = getattr(solution_info, 'symmetry', 'axial')
+    mesh_dim = mesh.geometry().dim()
+
+    # Apply bounds filtering if specified
+    # Create a new subdomain marker that includes only cells in target region AND within bounds
+    bounds_applied = {}
+    if bounds:
+        # Use a unique marker value for the filtered region
+        filtered_marker = 999
+
+        # Create new subdomain function
+        filtered_subdomains = d.MeshFunction("size_t", mesh, mesh.topology().dim(), 0)
+
+        n_in_region = 0
+        n_in_bounds = 0
+
+        for cell in d.cells(mesh):
+            if subdomains[cell] == target_marker:
+                n_in_region += 1
+                midpoint = cell.midpoint()
+                mp = [midpoint.x(), midpoint.y()]
+                if mesh_dim == 3:
+                    mp.append(midpoint.z())
+
+                # Check bounds
+                in_bounds = True
+                if "x_min" in bounds and mp[0] < bounds["x_min"]:
+                    in_bounds = False
+                if "x_max" in bounds and mp[0] > bounds["x_max"]:
+                    in_bounds = False
+                if "y_min" in bounds and mp[1] < bounds["y_min"]:
+                    in_bounds = False
+                if "y_max" in bounds and mp[1] > bounds["y_max"]:
+                    in_bounds = False
+                if mesh_dim == 3:
+                    if "z_min" in bounds and mp[2] < bounds["z_min"]:
+                        in_bounds = False
+                    if "z_max" in bounds and mp[2] > bounds["z_max"]:
+                        in_bounds = False
+
+                if in_bounds:
+                    filtered_subdomains[cell] = filtered_marker
+                    n_in_bounds += 1
+
+        if n_in_bounds == 0:
+            return [TextContent(type="text", text=json.dumps({
+                "error": {
+                    "code": "NO_CELLS_IN_BOUNDS",
+                    "message": f"No cells in region '{region}' are within the specified bounds. "
+                               f"Region has {n_in_region} cells total.",
+                    "bounds": bounds
+                }
+            }, indent=2))]
+
+        # Use the filtered subdomain marker
+        subdomains = filtered_subdomains
+        target_marker = filtered_marker
+        bounds_applied = bounds
 
     # Create measure restricted to target region
     dx_region = d.Measure("dx", domain=mesh, subdomain_data=subdomains, subdomain_id=target_marker)
 
-    # Spatial coordinates for Jacobian
+    # Spatial coordinates
     x = d.SpatialCoordinate(mesh)
 
-    # Set up Jacobian based on symmetry
-    if symmetry == "axial":
-        # Axisymmetric: include 2πr factor
-        r = x[0]
-        jacobian = 2 * pi * r
-        coord_names = ("r", "z")
-    else:
-        # Translation or 3D: no extra factor (result is per unit length for translation)
+    if mesh_dim == 3:
+        # True 3D: no Jacobian factor
         jacobian = d.Constant(1.0)
-        coord_names = ("x", "y")
+        coord_names = ("x", "y", "z")
+    else:
+        # Set up Jacobian based on symmetry
+        if symmetry == "axial":
+            # Axisymmetric: include 2πr factor
+            r = x[0]
+            jacobian = 2 * pi * r
+            coord_names = ("r", "z")
+        else:
+            # Translation: no extra factor (result is per unit length in z)
+            jacobian = d.Constant(1.0)
+            coord_names = ("x", "y")
 
     # Compute integrals
     result_data = {}
@@ -715,19 +854,87 @@ async def _handle_integrate(
     mass = d.assemble(jacobian * density * dx_region)
     result_data["mass"] = float(mass)
 
-    if quantity == "force":
-        # Force integral: F = ∫ρ∇φ dV
-        grad_phi = d.grad(field)
+    # Gradient of field (needed for force and torque)
+    grad_phi = d.grad(field)
 
-        # Integrate each component
+    # Force calculation
+    if quantity in ["force", "all"]:
+        # Force integral: F = ∫ρ∇φ dV
         F_0 = d.assemble(jacobian * density * grad_phi[0] * dx_region)
         F_1 = d.assemble(jacobian * density * grad_phi[1] * dx_region)
 
-        F_magnitude = sqrt(float(F_0)**2 + float(F_1)**2)
-
         result_data[f"F_{coord_names[0]}"] = float(F_0)
         result_data[f"F_{coord_names[1]}"] = float(F_1)
+
+        if mesh_dim == 3:
+            F_2 = d.assemble(jacobian * density * grad_phi[2] * dx_region)
+            result_data[f"F_{coord_names[2]}"] = float(F_2)
+            F_magnitude = sqrt(float(F_0)**2 + float(F_1)**2 + float(F_2)**2)
+        else:
+            F_magnitude = sqrt(float(F_0)**2 + float(F_1)**2)
+
         result_data["F_magnitude"] = F_magnitude
+
+    # Torque calculation
+    if quantity in ["torque", "all"]:
+        if mesh_dim == 3:
+            # Full 3D torque: τ = ∫ (r - r₀) × (ρ∇φ) dV
+            # τ_x = ∫ ρ[(y-y₀)∂φ/∂z - (z-z₀)∂φ/∂y] dV
+            # τ_y = ∫ ρ[(z-z₀)∂φ/∂x - (x-x₀)∂φ/∂z] dV
+            # τ_z = ∫ ρ[(x-x₀)∂φ/∂y - (y-y₀)∂φ/∂x] dV
+
+            x0 = d.Constant(torque_origin[0])
+            y0 = d.Constant(torque_origin[1])
+            z0 = d.Constant(torque_origin[2])
+
+            # Position relative to origin
+            rx = x[0] - x0
+            ry = x[1] - y0
+            rz = x[2] - z0
+
+            # Force density components
+            f_x = density * grad_phi[0]
+            f_y = density * grad_phi[1]
+            f_z = density * grad_phi[2]
+
+            # Torque components: τ = r × f
+            tau_x = d.assemble(jacobian * (ry * f_z - rz * f_y) * dx_region)
+            tau_y = d.assemble(jacobian * (rz * f_x - rx * f_z) * dx_region)
+            tau_z = d.assemble(jacobian * (rx * f_y - ry * f_x) * dx_region)
+
+            result_data["tau_x"] = float(tau_x)
+            result_data["tau_y"] = float(tau_y)
+            result_data["tau_z"] = float(tau_z)
+            result_data["tau_magnitude"] = sqrt(float(tau_x)**2 + float(tau_y)**2 + float(tau_z)**2)
+            result_data["torque_origin"] = torque_origin
+
+        else:
+            if symmetry == "axial":
+                # Axial symmetry: all torque components are zero by symmetry
+                # (no azimuthal variation, integrals of sin(φ) and cos(φ) over 2π vanish)
+                result_data["tau_x"] = 0.0
+                result_data["tau_y"] = 0.0
+                result_data["tau_z"] = 0.0
+                result_data["tau_magnitude"] = 0.0
+                result_data["torque_note"] = "All torque components are zero by axial symmetry."
+            else:
+                # Translation symmetry: only τ_z is non-zero (per unit length)
+                # τ_z/L = ∫∫ ρ[(x-x₀)∂φ/∂y - (y-y₀)∂φ/∂x] dx dy
+                x0 = d.Constant(torque_origin[0])
+                y0 = d.Constant(torque_origin[1])
+
+                rx = x[0] - x0
+                ry = x[1] - y0
+
+                f_x = density * grad_phi[0]
+                f_y = density * grad_phi[1]
+
+                tau_z = d.assemble(jacobian * (rx * f_y - ry * f_x) * dx_region)
+
+                result_data["tau_z"] = float(tau_z)
+                result_data["tau_magnitude"] = abs(float(tau_z))
+                result_data["torque_origin"] = [torque_origin[0], torque_origin[1]]
+                result_data["torque_note"] = "τ_z per unit length (translation symmetry). τ_x, τ_y not computed."
 
     # Count cells in region for sanity check
     n_cells = sum(1 for cell in d.cells(mesh) if subdomains[cell] == target_marker)
@@ -743,10 +950,15 @@ async def _handle_integrate(
         "scaling": {
             "description": "Values are in rescaled (dimensionless) units.",
             "mass_physical": "M_physical[kg] = mass_scale_kg × mass",
-            "force_physical": "F_physical[N] = force_scale_N × force",
-            "note": "Use calculate_physical_parameters tool to get mass_scale_kg and force_scale_N."
+            "force_physical": "F_physical[N] = force_scale_N × F",
+            "torque_physical": "τ_physical[N·m] = torque_scale_Nm × τ",
+            "note": "Use calculate_physical_parameters tool to get scaling factors."
         }
     }
+
+    # Add bounds info if applied
+    if bounds_applied:
+        result["bounds_applied"] = bounds_applied
 
     # Add note about units for translation symmetry
     if symmetry == "translation":

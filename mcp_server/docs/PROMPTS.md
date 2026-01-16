@@ -325,4 +325,4 @@
 > - Source density: 1e17
 > - Vacuum density: 1.0
 >
-> Plot slices of the field and gradient at different z values.
+> Plot slices of the field and gradient at different z values. Compute the torque for the upper and lower discs. 

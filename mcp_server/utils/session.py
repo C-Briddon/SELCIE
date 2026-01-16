@@ -35,6 +35,7 @@ class SolutionInfo:
     field_min: float
     field_max: float
     deg_V: int = 2  # Function space degree (CG1=1, CG2=2, etc.)
+    symmetry: str = "axial"  # Mesh symmetry: "axial", "translation", or "none"
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
