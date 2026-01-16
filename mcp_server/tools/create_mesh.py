@@ -1291,7 +1291,7 @@ def _create_custom_step(
         center_x = (xmin + xmax) / 2
         center_y = (ymin + ymax) / 2
         center_z = (zmin + zmax) / 2
-        char_size = min(xmax - xmin, ymax - ymin, zmax - zmin)
+        char_size = max(xmax - xmin, ymax - ymin, zmax - zmin)
 
         # Apply scale if needed
         if scale != 1.0:
@@ -1402,10 +1402,10 @@ def _create_custom_step(
                 target_boundary_cells = 5
                 cell_min_refined = shell_thickness / target_boundary_cells
             else:
-                # Geometry-based refinement using quality settings
-                # cell_min_factor controls refinement near object surfaces
-                cell_min_refined = quality["cell_min_factor"] * char_size
-                dist_max = quality["dist_max_factor"] * char_size
+                # Geometry-based refinement (no physics params)
+                # Use char_size/10 for boundary cells, refine within char_size/5 of surface
+                cell_min_refined = char_size / 10
+                dist_max = char_size / 5
 
             # Apply limits
             min_cell = char_size * 0.001  # Don't go too small
@@ -1415,45 +1415,37 @@ def _create_custom_step(
             if cell_max / cell_min_refined > 50:
                 cell_min_refined = cell_max / 50
 
-            # Cell size inside the object - based on char_size (min dimension)
-            cell_size_object = quality["cell_min_factor"] * char_size
+            # Cell size inside the object - needs to be small enough to resolve flat profile
+            # Use ~10 cells across the object radius
+            cell_size_object = char_size / 10
 
-            # Create constant field for object - uniform fine cells throughout
-            object_field = gmsh.model.mesh.field.add("Constant")
-            gmsh.model.mesh.field.setNumber(object_field, "VIn", cell_size_object)
-            gmsh.model.mesh.field.setNumber(object_field, "VOut", cell_max)
-            gmsh.model.mesh.field.setNumbers(object_field, "VolumesList", object_tags)
-
-            # Create distance field from object surfaces (for vacuum grading)
+            # Create distance field from object surfaces
             dist_field = gmsh.model.mesh.field.add("Distance")
             gmsh.model.mesh.field.setNumbers(dist_field, "SurfacesList", object_surface_tags)
 
-            # Create threshold field for vacuum - grades from boundary to far field
-            # Use coarser cells in vacuum, transition quickly to cell_max
-            vacuum_cell_min = quality["cell_max_factor"] * domain_radius * 0.5
-            vacuum_dist_max = quality["dist_max_factor"] * domain_radius * 0.25  # fast transition
+            # Create threshold field: small cells near surface, large far away
+            thresh_field = gmsh.model.mesh.field.add("Threshold")
+            gmsh.model.mesh.field.setNumber(thresh_field, "InField", dist_field)
+            gmsh.model.mesh.field.setNumber(thresh_field, "SizeMin", cell_min_refined)
+            gmsh.model.mesh.field.setNumber(thresh_field, "SizeMax", cell_max)
+            gmsh.model.mesh.field.setNumber(thresh_field, "DistMin", 0)
+            gmsh.model.mesh.field.setNumber(thresh_field, "DistMax", dist_max)
 
-            vacuum_thresh_field = gmsh.model.mesh.field.add("Threshold")
-            gmsh.model.mesh.field.setNumber(vacuum_thresh_field, "InField", dist_field)
-            gmsh.model.mesh.field.setNumber(vacuum_thresh_field, "SizeMin", vacuum_cell_min)
-            gmsh.model.mesh.field.setNumber(vacuum_thresh_field, "SizeMax", cell_max)
-            gmsh.model.mesh.field.setNumber(vacuum_thresh_field, "DistMin", 0)
-            gmsh.model.mesh.field.setNumber(vacuum_thresh_field, "DistMax", vacuum_dist_max)
+            # Create constant field for object interior refinement
+            const_field = gmsh.model.mesh.field.add("Constant")
+            gmsh.model.mesh.field.setNumber(const_field, "VIn", cell_size_object)
+            gmsh.model.mesh.field.setNumber(const_field, "VOut", cell_max)
+            gmsh.model.mesh.field.setNumbers(const_field, "VolumesList", object_tags)
 
-            # Restrict vacuum threshold to vacuum volumes only
-            vacuum_field = gmsh.model.mesh.field.add("Restrict")
-            gmsh.model.mesh.field.setNumber(vacuum_field, "InField", vacuum_thresh_field)
-            gmsh.model.mesh.field.setNumbers(vacuum_field, "VolumesList", vacuum_tags)
-
-            # Combine: object field + vacuum field
+            # Combine fields: use minimum of threshold (boundary) and constant (interior)
             min_field = gmsh.model.mesh.field.add("Min")
-            gmsh.model.mesh.field.setNumbers(min_field, "FieldsList", [object_field, vacuum_field])
+            gmsh.model.mesh.field.setNumbers(min_field, "FieldsList", [thresh_field, const_field])
 
             # Set as background field
             gmsh.model.mesh.field.setAsBackgroundMesh(min_field)
 
             # Update global min to allow refined cells
-            gmsh.option.setNumber("Mesh.MeshSizeMin", cell_size_object)
+            gmsh.option.setNumber("Mesh.MeshSizeMin", min(cell_min_refined, cell_size_object))
 
         # Generate the 3D mesh
         gmsh.model.mesh.generate(3)
