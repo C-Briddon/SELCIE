@@ -146,7 +146,8 @@ async def handle(arguments: dict) -> list[TextContent]:
     initial_guess = arguments.get("initial_guess", "constant")
     custom_id = arguments.get("custom_id")
     deg_V = arguments.get("deg_V", 2)
-
+    # MCP cannot have print values, this is for debugging only
+    display_progress = arguments.get("display_progress", False)
     # Validate mesh exists
     mesh_info = session.get_mesh(mesh_id)
     if mesh_info is None:
@@ -280,7 +281,7 @@ async def handle(arguments: dict) -> list[TextContent]:
         # Use optimized linear solver for larger meshes, default for smaller
         if n_cells > 10000:
             picard_result = solver.picard(
-                display_progress=False,
+                display_progress=display_progress,
                 tol_du=tol,
                 relaxation_parameter=relaxation,
                 maxiter=max_iter,
@@ -290,7 +291,7 @@ async def handle(arguments: dict) -> list[TextContent]:
             )
         else:
             picard_result = solver.picard(
-                display_progress=False,
+                display_progress=display_progress,
                 tol_du=tol,
                 relaxation_parameter=relaxation,
                 maxiter=max_iter,
