@@ -9,6 +9,8 @@ import tempfile
 import os
 from typing import Any
 
+import numpy as np
+
 from mcp.types import Tool, TextContent
 
 from SELCIE import MeshingTools
@@ -28,13 +30,12 @@ MESH_QUALITY_SETTINGS = {
 }
 
 # Mesh quality settings for 3D: more gradual increments since cell count scales as 1/h³
-# ~1.6x ramp between levels → ~4x cell count increase per level (1.6³ ≈ 4.1)
 MESH_QUALITY_SETTINGS_3D = {
-    "very_coarse": {"cell_min_factor": 0.20, "cell_max_factor": 0.8, "dist_max_factor": 2.0},
-    "coarse": {"cell_min_factor": 0.125, "cell_max_factor": 0.5, "dist_max_factor": 1.5},
-    "medium": {"cell_min_factor": 0.08, "cell_max_factor": 0.32, "dist_max_factor": 1.0},
-    "fine": {"cell_min_factor": 0.05, "cell_max_factor": 0.2, "dist_max_factor": 0.6},
-    "very_fine": {"cell_min_factor": 0.032, "cell_max_factor": 0.128, "dist_max_factor": 0.4},
+    "very_coarse": {"cell_min_factor": 0.20, "cell_max_factor": 0.80, "dist_max_factor": 0.5},
+    "coarse":      {"cell_min_factor": 0.125, "cell_max_factor": 0.50, "dist_max_factor": 0.5},
+    "medium":      {"cell_min_factor": 0.08, "cell_max_factor": 0.32, "dist_max_factor": 0.5},
+    "fine":        {"cell_min_factor": 0.05, "cell_max_factor": 0.20, "dist_max_factor": 0.35},
+    "very_fine":   {"cell_min_factor": 0.032, "cell_max_factor": 0.128, "dist_max_factor": 0.25},
 }
 
 # Default symmetry for each geometry
@@ -1244,10 +1245,9 @@ def _create_custom_step(
 
     Required params:
     - step_file: Path to STEP, IGES, or BREP file
-    - domain_radius: Radius of spherical vacuum domain
 
     Optional params:
-    - scale: Scale factor for imported geometry (default 1.0)
+    - domain_radius: Radius of spherical vacuum domain (default: 1.5x max geometry extent)
     - physics_info: Dict with physics refinement info (lambda_min, etc.)
 
     Returns:
@@ -1259,195 +1259,206 @@ def _create_custom_step(
     import os
 
     step_file = params["step_file"]
-    domain_radius = params["domain_radius"]
-    scale = params.get("scale", 1.0)
+    domain_radius = params.get("domain_radius")  # Optional, auto-calculated if not provided
 
     # Validate file exists
     if not os.path.exists(step_file):
         raise FileNotFoundError(f"STEP file not found: {step_file}")
 
-    # Initialize gmsh fresh (don't use MeshingTools)
+    # Initialize gmsh
     gmsh.initialize()
     gmsh.model.add(mesh_id)
-    gmsh.option.setNumber("General.Terminal", 0)  # Suppress terminal output
+    gmsh.option.setNumber("General.Terminal", 0)
 
     try:
-        # Import the STEP file using OpenCASCADE kernel
-        imported_entities = gmsh.model.occ.importShapes(step_file, highestDimOnly=True)
+        # Import STEP file
+        imported = gmsh.model.occ.importShapes(step_file, highestDimOnly=True)
         gmsh.model.occ.synchronize()
 
-        if not imported_entities:
-            raise ValueError(f"No geometry entities found in file: {step_file}")
+        if not imported:
+            raise ValueError(f"No geometry found in {step_file}")
 
-        # Get bounding box of all imported entities
+        # Get bounding box
         xmin, ymin, zmin = float('inf'), float('inf'), float('inf')
         xmax, ymax, zmax = float('-inf'), float('-inf'), float('-inf')
-        for dim, tag in imported_entities:
+        for dim, tag in imported:
             bx1, by1, bz1, bx2, by2, bz2 = gmsh.model.occ.getBoundingBox(dim, tag)
             xmin, ymin, zmin = min(xmin, bx1), min(ymin, by1), min(zmin, bz1)
             xmax, ymax, zmax = max(xmax, bx2), max(ymax, by2), max(zmax, bz2)
 
-        # Calculate center and characteristic size
-        center_x = (xmin + xmax) / 2
-        center_y = (ymin + ymax) / 2
-        center_z = (zmin + zmax) / 2
-        char_size = max(xmax - xmin, ymax - ymin, zmax - zmin)
+        # Calculate characteristic sizes
+        dx, dy, dz = xmax - xmin, ymax - ymin, zmax - zmin
+        max_extent = max(dx, dy, dz)
+        # Use min extent to capture thin features, but clamp to avoid pathological cases
+        char_size = max(min(dx, dy, dz), 0.1 * max_extent)
 
-        # Apply scale if needed
-        if scale != 1.0:
-            gmsh.model.occ.dilate(imported_entities, center_x, center_y, center_z, scale, scale, scale)
-            char_size *= scale
-            gmsh.model.occ.synchronize()
-            # Recalculate bounds after scaling
-            xmin, ymin, zmin = float('inf'), float('inf'), float('inf')
-            xmax, ymax, zmax = float('-inf'), float('-inf'), float('-inf')
-            for dim, tag in imported_entities:
-                bx1, by1, bz1, bx2, by2, bz2 = gmsh.model.occ.getBoundingBox(dim, tag)
-                xmin, ymin, zmin = min(xmin, bx1), min(ymin, by1), min(zmin, bz1)
-                xmax, ymax, zmax = max(xmax, bx2), max(ymax, by2), max(zmax, bz2)
-            center_x = (xmin + xmax) / 2
-            center_y = (ymin + ymax) / 2
-            center_z = (zmin + zmax) / 2
+        # Auto-calculate domain_radius if not provided (1.5x the max extent)
+        if domain_radius is None:
+            domain_radius = max_extent * 1.5
 
-        # Translate to center at origin
-        dx, dy, dz = -center_x, -center_y, -center_z
-        gmsh.model.occ.translate(imported_entities, dx, dy, dz)
+        # Center at origin
+        cx, cy, cz = (xmin + xmax) / 2, (ymin + ymax) / 2, (zmin + zmax) / 2
+        gmsh.model.occ.translate(imported, -cx, -cy, -cz)
         gmsh.model.occ.synchronize()
-
-        # Update bounds after centering
-        xmin, ymin, zmin = xmin + dx, ymin + dy, zmin + dz
-        xmax, ymax, zmax = xmax + dx, ymax + dy, zmax + dz
-
-        # Check that object fits within domain
-        max_extent = max(abs(xmin), abs(xmax), abs(ymin), abs(ymax), abs(zmin), abs(zmax))
-        if max_extent >= domain_radius:
-            raise ValueError(
-                f"Imported geometry extent ({max_extent:.4f}) exceeds domain_radius ({domain_radius}). "
-                f"Increase domain_radius or use scale parameter to shrink geometry."
-            )
 
         # Create spherical vacuum domain
         vacuum_sphere = gmsh.model.occ.addSphere(0, 0, 0, domain_radius)
         gmsh.model.occ.synchronize()
 
-        # Boolean cut: vacuum = sphere - imported object(s)
-        # Get all 3D entities from imported shapes
-        object_entities = [(dim, tag) for dim, tag in imported_entities if dim == 3]
+        # Get original object volume tags
+        original_object_tags = [tag for dim, tag in imported if dim == 3]
 
-        if not object_entities:
-            raise ValueError("No 3D volumes found in imported file. STEP file may contain only surfaces.")
-
-        # Perform boolean cut: vacuum with object hole
-        vacuum_with_hole, vacuum_map = gmsh.model.occ.cut(
+        # Fragment: creates shared interfaces between sphere and objects
+        # This ensures conformal mesh at the interface
+        fragment_result, fragment_map = gmsh.model.occ.fragment(
             [(3, vacuum_sphere)],
-            object_entities,
-            removeObject=True,
-            removeTool=False  # Keep the object
+            [(3, t) for t in original_object_tags]
         )
         gmsh.model.occ.synchronize()
 
-        # Set up mesh sizes
-        # cell_min based on object size (for fine resolution near/in object)
-        # cell_max based on domain size (for coarse cells in far vacuum)
-        cell_min = quality["cell_min_factor"] * char_size
-        cell_max = quality["cell_max_factor"] * domain_radius
+        # Identify volumes by location: object volumes are inside the original
+        # object bounding box, vacuum is outside
+        # We use the centroid/bounding box to classify each resulting volume
+        all_volumes = [tag for dim, tag in fragment_result if dim == 3]
 
-        # Create physical groups for 3D volumes
-        # SELCIE solver expects markers to be 0, 1, 2, ... (not gmsh default 1, 2, 3, ...)
-        object_tags = [tag for dim, tag in object_entities if dim == 3]
+        object_tags = []
+        vacuum_tags = []
+
+        for vol_tag in all_volumes:
+            # Get bounding box of this volume
+            bx1, by1, bz1, bx2, by2, bz2 = gmsh.model.occ.getBoundingBox(3, vol_tag)
+            vol_center = ((bx1 + bx2) / 2, (by1 + by2) / 2, (bz1 + bz2) / 2)
+            vol_radius = np.sqrt(vol_center[0]**2 + vol_center[1]**2 + vol_center[2]**2)
+            vol_size = max(bx2 - bx1, by2 - by1, bz2 - bz1)
+
+            # Object volumes: centroid well inside domain, size << domain
+            # Vacuum: extends to domain boundary
+            if vol_size > 0.9 * domain_radius or bx2 > 0.9 * domain_radius or \
+               bx1 < -0.9 * domain_radius or by2 > 0.9 * domain_radius or \
+               by1 < -0.9 * domain_radius or bz2 > 0.9 * domain_radius or \
+               bz1 < -0.9 * domain_radius:
+                vacuum_tags.append(vol_tag)
+            else:
+                object_tags.append(vol_tag)
+
+        if not object_tags:
+            raise ValueError("No object volumes identified after fragment")
+        if not vacuum_tags:
+            raise ValueError("No vacuum volumes identified after fragment")
+
+        # Assign physical groups
+        # SELCIE solver expects markers 0 and 1
         gmsh.model.addPhysicalGroup(3, object_tags, tag=0, name="object")
-
-        vacuum_tags = [tag for dim, tag in vacuum_with_hole if dim == 3]
         gmsh.model.addPhysicalGroup(3, vacuum_tags, tag=1, name="vacuum")
 
-        # Create physical groups for 2D boundary surfaces
-        # Get all 2D surface entities
-        all_surfaces = gmsh.model.getEntities(2)
+        # Get surfaces for each region
+        object_surfaces = set()
+        for tag in object_tags:
+            bounds = gmsh.model.getBoundary([(3, tag)], oriented=False)
+            object_surfaces.update(abs(b[1]) for b in bounds)
 
-        # Separate object surfaces from outer boundary
-        # The outer boundary is on the vacuum sphere surface
-        object_surface_tags = []
-        outer_boundary_tags = []
+        vacuum_surfaces = set()
+        for tag in vacuum_tags:
+            bounds = gmsh.model.getBoundary([(3, tag)], oriented=False)
+            vacuum_surfaces.update(abs(b[1]) for b in bounds)
 
-        for dim, tag in all_surfaces:
-            # Get bounding box of surface
-            bbox = gmsh.model.occ.getBoundingBox(dim, tag)
-            # Check if surface touches the outer sphere
-            max_dist = max(abs(bbox[0]), abs(bbox[1]), abs(bbox[2]),
-                          abs(bbox[3]), abs(bbox[4]), abs(bbox[5]))
-            if max_dist > domain_radius * 0.95:
-                outer_boundary_tags.append(tag)
-            else:
-                object_surface_tags.append(tag)
+        # Interface surfaces: shared between object and vacuum (the key benefit of fragment)
+        interface_surfaces = list(object_surfaces & vacuum_surfaces)
 
-        # Physical groups for surfaces: object=0, outer=1
-        if object_surface_tags:
-            gmsh.model.addPhysicalGroup(2, object_surface_tags, tag=0, name="object_surface")
-        if outer_boundary_tags:
-            gmsh.model.addPhysicalGroup(2, outer_boundary_tags, tag=1, name="outer_boundary")
+        # Outer boundary: vacuum surfaces that are not interfaces
+        outer_surfs = list(vacuum_surfaces - object_surfaces)
 
-        # Set global mesh size options
+        gmsh.model.addPhysicalGroup(2, outer_surfs, 10, name="outer_boundary")
+        gmsh.model.addPhysicalGroup(2, interface_surfaces, 11, name="interface")
+
+        # For the distance field, use interface surfaces
+        object_surfaces = interface_surfaces
+
+        # =====================================================================
+        # MESH REFINEMENT FIELDS
+        # =====================================================================
+
+        # Get quality settings (quality dict is passed in with these keys)
+        cell_min_factor = quality["cell_min_factor"]
+        cell_max_factor = quality["cell_max_factor"]
+        dist_max_factor = quality["dist_max_factor"]
+
+        # Calculate cell sizes (same factors for object and vacuum)
+        cell_min = cell_min_factor * char_size
+        cell_max = cell_max_factor * char_size
+        dist_max = dist_max_factor * char_size
+
+        # Wavelength-based refinement (if provided)
+        if physics_info and physics_info.get("lambda_min"):
+            # Physics-aware refinement based on screening length
+            wavelength = physics_info["lambda_min"]
+            # Target cells across the wavelength
+            cell_min_wavelength = wavelength / REFINEMENT_LIMITS["target_boundary_cells"]
+
+            # Safeguard: don't go smaller than 0.01 × char_size
+            cell_min_floor = 0.01 * char_size
+
+            if cell_min_wavelength < cell_min_floor:
+                cell_min_wavelength = cell_min_floor
+
+            # Only refine if wavelength requires finer cells than quality preset
+            if cell_min_wavelength < cell_min:
+                cell_min = cell_min_wavelength
+                # Adjust dist_max to transition over ~3 wavelengths
+                dist_max = min(3 * wavelength, dist_max)
+
+        # Vacuum max cell size scales with domain_radius for efficiency
+        vacuum_cell_max = cell_max_factor * domain_radius
+
+        # Disable gmsh's automatic size sources so our fields have full control
+        # Without this, curvature, boundary extension, and CAD point sizes can
+        # silently override the background field
+        gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
+        gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
+        gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
+
+        # Distance field from object surfaces
+        dist_field = gmsh.model.mesh.field.add("Distance")
+        gmsh.model.mesh.field.setNumbers(dist_field, "SurfacesList", object_surfaces)
+
+        # Object threshold field: grades from cell_min to cell_max
+        object_thresh = gmsh.model.mesh.field.add("Threshold")
+        gmsh.model.mesh.field.setNumber(object_thresh, "InField", dist_field)
+        gmsh.model.mesh.field.setNumber(object_thresh, "SizeMin", cell_min)
+        gmsh.model.mesh.field.setNumber(object_thresh, "SizeMax", cell_max)
+        gmsh.model.mesh.field.setNumber(object_thresh, "DistMin", 0)
+        gmsh.model.mesh.field.setNumber(object_thresh, "DistMax", dist_max)
+
+        # Restrict object field to object volumes
+        object_field = gmsh.model.mesh.field.add("Restrict")
+        gmsh.model.mesh.field.setNumber(object_field, "InField", object_thresh)
+        gmsh.model.mesh.field.setNumbers(object_field, "VolumesList", object_tags)
+
+        # Vacuum threshold field: grades from cell_min to vacuum_cell_max
+        vacuum_thresh = gmsh.model.mesh.field.add("Threshold")
+        gmsh.model.mesh.field.setNumber(vacuum_thresh, "InField", dist_field)
+        gmsh.model.mesh.field.setNumber(vacuum_thresh, "SizeMin", cell_min)
+        gmsh.model.mesh.field.setNumber(vacuum_thresh, "SizeMax", vacuum_cell_max)
+        gmsh.model.mesh.field.setNumber(vacuum_thresh, "DistMin", 0)
+        gmsh.model.mesh.field.setNumber(vacuum_thresh, "DistMax", dist_max_factor * domain_radius)
+
+        # Restrict vacuum field to vacuum volumes
+        vacuum_field = gmsh.model.mesh.field.add("Restrict")
+        gmsh.model.mesh.field.setNumber(vacuum_field, "InField", vacuum_thresh)
+        gmsh.model.mesh.field.setNumbers(vacuum_field, "VolumesList", vacuum_tags)
+
+        # Combine with Min field
+        min_field = gmsh.model.mesh.field.add("Min")
+        gmsh.model.mesh.field.setNumbers(min_field, "FieldsList", [object_field, vacuum_field])
+
+        # Set as background mesh
+        gmsh.model.mesh.field.setAsBackgroundMesh(min_field)
+
+        # Set global mesh size limits
         gmsh.option.setNumber("Mesh.MeshSizeMin", cell_min)
-        gmsh.option.setNumber("Mesh.MeshSizeMax", cell_max)
-        gmsh.option.setNumber("Mesh.Algorithm3D", 1)  # Delaunay
+        gmsh.option.setNumber("Mesh.MeshSizeMax", vacuum_cell_max)
 
-        # Apply refinement near object surfaces (always for STEP files)
-        # Use physics-based parameters if provided, otherwise use geometry-based defaults
-        if object_surface_tags:
-            if physics_info and physics_info.get("lambda_min"):
-                # Physics-aware refinement based on screening length
-                lambda_min = physics_info["lambda_min"]
-                shell_thickness = lambda_min
-                dist_max = min(3 * shell_thickness, quality["dist_max_factor"] * char_size)
-                target_boundary_cells = 5
-                cell_min_refined = shell_thickness / target_boundary_cells
-            else:
-                # Geometry-based refinement (no physics params)
-                # Use char_size/10 for boundary cells, refine within char_size/5 of surface
-                cell_min_refined = char_size / 10
-                dist_max = char_size / 5
-
-            # Apply limits
-            min_cell = char_size * 0.001  # Don't go too small
-            cell_min_refined = max(min_cell, cell_min_refined)
-
-            # Ensure refinement ratio isn't too extreme (max 50:1)
-            if cell_max / cell_min_refined > 50:
-                cell_min_refined = cell_max / 50
-
-            # Cell size inside the object - needs to be small enough to resolve flat profile
-            # Use ~10 cells across the object radius
-            cell_size_object = char_size / 10
-
-            # Create distance field from object surfaces
-            dist_field = gmsh.model.mesh.field.add("Distance")
-            gmsh.model.mesh.field.setNumbers(dist_field, "SurfacesList", object_surface_tags)
-
-            # Create threshold field: small cells near surface, large far away
-            thresh_field = gmsh.model.mesh.field.add("Threshold")
-            gmsh.model.mesh.field.setNumber(thresh_field, "InField", dist_field)
-            gmsh.model.mesh.field.setNumber(thresh_field, "SizeMin", cell_min_refined)
-            gmsh.model.mesh.field.setNumber(thresh_field, "SizeMax", cell_max)
-            gmsh.model.mesh.field.setNumber(thresh_field, "DistMin", 0)
-            gmsh.model.mesh.field.setNumber(thresh_field, "DistMax", dist_max)
-
-            # Create constant field for object interior refinement
-            const_field = gmsh.model.mesh.field.add("Constant")
-            gmsh.model.mesh.field.setNumber(const_field, "VIn", cell_size_object)
-            gmsh.model.mesh.field.setNumber(const_field, "VOut", cell_max)
-            gmsh.model.mesh.field.setNumbers(const_field, "VolumesList", object_tags)
-
-            # Combine fields: use minimum of threshold (boundary) and constant (interior)
-            min_field = gmsh.model.mesh.field.add("Min")
-            gmsh.model.mesh.field.setNumbers(min_field, "FieldsList", [thresh_field, const_field])
-
-            # Set as background field
-            gmsh.model.mesh.field.setAsBackgroundMesh(min_field)
-
-            # Update global min to allow refined cells
-            gmsh.option.setNumber("Mesh.MeshSizeMin", min(cell_min_refined, cell_size_object))
-
-        # Generate the 3D mesh
+        # Generate 3D mesh
         gmsh.model.mesh.generate(3)
 
         # Create output directory
@@ -1458,51 +1469,51 @@ def _create_custom_step(
         msh_file = os.path.join(mesh_path, f"{mesh_id}.msh")
         gmsh.write(msh_file)
 
-        # Convert to XDMF using meshio
-        import meshio
-        msh_mesh = meshio.read(msh_file)
+    finally:
+        gmsh.finalize()
 
-        # Get all tetrahedra and their physical group markers
-        # Use get_cells_type and cell_data_dict to properly combine all tetra blocks
-        tetra_cells = msh_mesh.get_cells_type('tetra')
-        if tetra_cells is None or len(tetra_cells) == 0:
-            raise ValueError("No tetrahedra found in generated mesh")
+    # Convert to XDMF using meshio
+    import meshio
+    msh_mesh = meshio.read(msh_file)
 
-        tetra_subdomain_data = msh_mesh.cell_data_dict.get('gmsh:physical', {}).get('tetra')
-        if tetra_subdomain_data is None:
-            raise ValueError("No physical group data found for tetrahedra")
+    # Get all tetrahedra and their physical group markers
+    # Use get_cells_type and cell_data_dict to properly combine all tetra blocks
+    tetra_cells = msh_mesh.get_cells_type('tetra')
+    if tetra_cells is None or len(tetra_cells) == 0:
+        raise ValueError("No tetrahedra found in generated mesh")
 
-        # Write mesh.xdmf with subdomain data
+    tetra_subdomain_data = msh_mesh.cell_data_dict.get('gmsh:physical', {}).get('tetra')
+    if tetra_subdomain_data is None:
+        raise ValueError("No physical group data found for tetrahedra")
+
+    # Write mesh.xdmf with subdomain data
+    meshio.write(
+        os.path.join(mesh_path, "mesh.xdmf"),
+        meshio.Mesh(
+            points=msh_mesh.points,
+            cells=[("tetra", tetra_cells)],
+            cell_data={"Subdomain": [tetra_subdomain_data]},
+            field_data=msh_mesh.field_data,
+        )
+    )
+
+    # Write boundaries.xdmf with boundary surface data
+    triangle_cells = msh_mesh.get_cells_type('triangle')
+    triangle_boundary_data = msh_mesh.cell_data_dict.get('gmsh:physical', {}).get('triangle')
+
+    if triangle_cells is not None and len(triangle_cells) > 0 and triangle_boundary_data is not None:
         meshio.write(
-            os.path.join(mesh_path, "mesh.xdmf"),
+            os.path.join(mesh_path, "boundaries.xdmf"),
             meshio.Mesh(
                 points=msh_mesh.points,
-                cells=[("tetra", tetra_cells)],
-                cell_data={"Subdomain": [tetra_subdomain_data]},
+                cells=[("triangle", triangle_cells)],
+                cell_data={"Boundary": [triangle_boundary_data]},
                 field_data=msh_mesh.field_data,
             )
         )
 
-        # Write boundaries.xdmf with boundary surface data
-        triangle_cells = msh_mesh.get_cells_type('triangle')
-        triangle_boundary_data = msh_mesh.cell_data_dict.get('gmsh:physical', {}).get('triangle')
-
-        if triangle_cells is not None and len(triangle_cells) > 0 and triangle_boundary_data is not None:
-            meshio.write(
-                os.path.join(mesh_path, "boundaries.xdmf"),
-                meshio.Mesh(
-                    points=msh_mesh.points,
-                    cells=[("triangle", triangle_cells)],
-                    cell_data={"Boundary": [triangle_boundary_data]},
-                    field_data=msh_mesh.field_data,
-                )
-            )
-
-        # Clean up MSH file
-        os.remove(msh_file)
-
-    finally:
-        gmsh.finalize()
+    # Clean up MSH file
+    os.remove(msh_file)
 
     # Return regions, bounds, and mesh_path
     regions = ["object", "vacuum"]
@@ -1568,7 +1579,7 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
         "parallel_plates": ["plate_separation", "plate_thickness"],
         "custom_2d_axial": ["domain_radius"],
         "custom_2d_translation": ["domain_radius"],
-        "custom_step": ["step_file", "domain_radius"],
+        "custom_step": ["step_file"],
     }
 
     missing = [p for p in required_params.get(geometry, []) if p not in params]

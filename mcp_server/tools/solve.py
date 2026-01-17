@@ -146,6 +146,11 @@ async def handle(arguments: dict) -> list[TextContent]:
     initial_guess = arguments.get("initial_guess", "constant")
     custom_id = arguments.get("custom_id")
     deg_V = arguments.get("deg_V", 2)
+    # MCP cannot have print values, this is for debugging only
+    display_progress = arguments.get("display_progress", False)
+    linear_solver = arguments.get("linear_solver", "krylov")
+    krylov_method = arguments.get("krylov_method", "cg")
+    krylov_preconditioner = arguments.get("krylov_preconditioner", "hypre_amg")
 
     # Validate mesh exists
     mesh_info = session.get_mesh(mesh_id)
@@ -280,17 +285,17 @@ async def handle(arguments: dict) -> list[TextContent]:
         # Use optimized linear solver for larger meshes, default for smaller
         if n_cells > 10000:
             picard_result = solver.picard(
-                display_progress=False,
+                display_progress=display_progress,
                 tol_du=tol,
                 relaxation_parameter=relaxation,
                 maxiter=max_iter,
-                linear_solver="krylov",
-                krylov_method="cg",
-                krylov_preconditioner="hypre_amg"
+                linear_solver=linear_solver,
+                krylov_method=krylov_method,
+                krylov_preconditioner=krylov_preconditioner
             )
         else:
             picard_result = solver.picard(
-                display_progress=False,
+                display_progress=display_progress,
                 tol_du=tol,
                 relaxation_parameter=relaxation,
                 maxiter=max_iter,
@@ -418,7 +423,7 @@ async def handle(arguments: dict) -> list[TextContent]:
                 "rho_min": density_min if density_saved else (density_stats["rho_min"] if density_stats["rho_min"] != float("inf") else None),
                 "rho_max": density_max if density_saved else (density_stats["rho_max"] if density_stats["rho_max"] != float("-inf") else None)
             },
-            "status": "converged" if converged else "max_iterations",
+            "status": "converged" if converged else "max_iterations_not_converged",
             "iterations": iterations,
             "final_du_norm": final_du_norm,
             "pde_residual": pde_residual,
