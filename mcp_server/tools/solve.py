@@ -418,7 +418,7 @@ async def handle(arguments: dict) -> list[TextContent]:
                 "rho_min": density_min if density_saved else (density_stats["rho_min"] if density_stats["rho_min"] != float("inf") else None),
                 "rho_max": density_max if density_saved else (density_stats["rho_max"] if density_stats["rho_max"] != float("-inf") else None)
             },
-            "status": "converged" if converged else "max_iterations",
+            "status": "converged" if converged else "max_iterations_not_converged",
             "iterations": iterations,
             "final_du_norm": final_du_norm,
             "pde_residual": pde_residual,
