@@ -516,14 +516,14 @@ class TestCreateMeshCustomStep:
 
     @pytest.mark.asyncio
     async def test_custom_step_missing_params(self):
-        """Missing required params should error."""
+        """Missing required params (step_file) should error."""
         from tools.create_mesh import handle
 
         result = await handle({
             "geometry": "custom_step",
             "params": {
-                "step_file": "tests/test_data/eotwash_disks.step",
-                # missing domain_radius
+                # missing step_file - this is required
+                "domain_radius": 1.0,
             },
         })
 

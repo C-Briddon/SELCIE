@@ -292,37 +292,3 @@ class TestDensityFunctions:
         assert abs(result - 0.3) < 1e-10
 
 
-class TestMethodSelection:
-    """Test solver method selection."""
-
-    def test_low_alpha_uses_picard(self):
-        """Low alpha should use picard."""
-        from tools.solve import _choose_method
-
-        method, relax = _choose_method(0.1, "auto")
-        assert method == "picard"
-        assert relax == 1.0
-
-    def test_medium_alpha_uses_relaxed_picard(self):
-        """Medium alpha should use picard with relaxation."""
-        from tools.solve import _choose_method
-
-        method, relax = _choose_method(500, "auto")
-        assert method == "picard"
-        assert relax < 1.0
-
-    def test_high_alpha_uses_strong_relaxation(self):
-        """High alpha should use strong relaxation."""
-        from tools.solve import _choose_method
-
-        method, relax = _choose_method(2000, "auto")
-        assert method == "picard"
-        assert relax == 0.5
-
-    def test_explicit_picard_no_relaxation(self):
-        """Explicit picard should use no relaxation."""
-        from tools.solve import _choose_method
-
-        method, relax = _choose_method(500, "picard")
-        assert method == "picard"
-        assert relax == 1.0

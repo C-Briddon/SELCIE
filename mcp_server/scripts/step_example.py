@@ -9,7 +9,7 @@ This script demonstrates the full workflow:
 4. Plot the field profile
 
 Usage:
-    python step_example.py [step_file] [--quality QUALITY] [--domain-radius R]
+    python step_example.py [step_file] [--quality QUALITY] [--domain-radius R] [--physics]
 
 Parameters:
 - alpha = 1e18
@@ -54,6 +54,11 @@ def parse_args():
         default=None,
         help="Domain radius (default: auto-calculated from geometry)",
     )
+    parser.add_argument(
+        "--physics", "-p",
+        action="store_true",
+        help="Enable physics-aware mesh refinement using solve parameters (alpha, density)",
+    )
     return parser.parse_args()
 
 
@@ -81,7 +86,7 @@ async def main():
         print(f"ERROR: STEP file not found: {step_file}")
         sys.exit(1)
 
-    output_dir = Path(__file__).parent.parent / "plots"
+    output_dir = Path(__file__).parent.parent / "step_plots"
     output_dir.mkdir(exist_ok=True)
 
     # Derive IDs and output names from filename
@@ -108,12 +113,25 @@ async def main():
     else:
         print("  Domain radius: auto (1.5x geometry extent)")
 
-    mesh_result = await create_mesh({
+    # Build create_mesh arguments
+    create_mesh_args = {
         "geometry": "custom_step",
         "params": mesh_params,
         "mesh_quality": args.quality,
         "custom_id": mesh_id,
-    })
+        "allow_large_mesh": True,
+    }
+
+    # Add physics_params for mesh refinement if --physics flag is set
+    if args.physics:
+        create_mesh_args["physics_params"] = {
+            "alpha": 1e18,
+            "density": {"object": 1e17, "vacuum": 1.0},
+            "n": 1,
+        }
+        print("  Physics-aware refinement: enabled")
+
+    mesh_result = await create_mesh(create_mesh_args)
 
     mesh_data = json.loads(mesh_result[0].text)
 
@@ -175,12 +193,13 @@ async def main():
         "custom_id": solution_id,
         "max_iter": 200,
         "display_progress": True,
+        "method": "picard",
     })
 
     solve_data = json.loads(solve_result[0].text)
 
     if "error" in solve_data:
-        print(f"ERROR: {solve_data['error']['message']}")
+        print(f"ERROR: {solve_data['error']}")
         return
 
     print(f"  Solution ID: {solve_data['solution_id']}")

@@ -174,7 +174,7 @@
 
 ## Full workflow tests
 
-### Sphere in Vacuum (Complete Test, Baseline result here is 3.4e-6)
+### Sphere in Vacuum (Complete Test, Baseline result here for max gradient is 3.4e-6)
 
 > I want to simulate a chameleon field around a sphere in a vacuum chamber.
 >
@@ -320,7 +320,7 @@
 >
 > Then solve the chamleleon field for this with the following parameters: 
 >
-> - Vaccum radius: 1.0
+> - Vaccum radius: 2.0
 > - Use α = 1e18 and n = 1
 > - Source density: 1e17
 > - Vacuum density: 1.0
