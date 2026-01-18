@@ -22,20 +22,21 @@ from utils.density import extract_density_value, SPHERICAL_GEOMETRIES
 # Mesh quality settings for 2D: (CellSizeMin, CellSizeMax, DistMax) relative to object size
 # Consistent 2.5x ramp between levels, 4x max/min ratio
 MESH_QUALITY_SETTINGS = {
-    "very_coarse": {"cell_min_factor": 0.125, "cell_max_factor": 0.5, "dist_max_factor": 2.0},
-    "coarse": {"cell_min_factor": 0.05, "cell_max_factor": 0.2, "dist_max_factor": 1.25},
+    "very_coarse": {"cell_min_factor": 0.125, "cell_max_factor": 0.5, "dist_max_factor": 0.5},
+    "coarse": {"cell_min_factor": 0.05, "cell_max_factor": 0.2, "dist_max_factor": 0.5},
     "medium": {"cell_min_factor": 0.02, "cell_max_factor": 0.08, "dist_max_factor": 0.5},
     "fine": {"cell_min_factor": 0.008, "cell_max_factor": 0.032, "dist_max_factor": 0.2},
     "very_fine": {"cell_min_factor": 0.0032, "cell_max_factor": 0.0128, "dist_max_factor": 0.1},
 }
 
 # Mesh quality settings for 3D: more gradual increments since cell count scales as 1/h³
+# Shifted up one level from original to provide finer meshes at each quality setting
 MESH_QUALITY_SETTINGS_3D = {
-    "very_coarse": {"cell_min_factor": 0.20, "cell_max_factor": 0.80, "dist_max_factor": 0.5},
-    "coarse":      {"cell_min_factor": 0.125, "cell_max_factor": 0.50, "dist_max_factor": 0.5},
-    "medium":      {"cell_min_factor": 0.08, "cell_max_factor": 0.32, "dist_max_factor": 0.5},
-    "fine":        {"cell_min_factor": 0.05, "cell_max_factor": 0.20, "dist_max_factor": 0.35},
-    "very_fine":   {"cell_min_factor": 0.032, "cell_max_factor": 0.128, "dist_max_factor": 0.25},
+    "very_coarse": {"cell_min_factor": 0.125, "cell_max_factor": 0.5, "dist_max_factor": 0.5},
+    "coarse":      {"cell_min_factor": 0.08, "cell_max_factor": 0.32, "dist_max_factor": 0.5},
+    "medium":      {"cell_min_factor": 0.05, "cell_max_factor": 0.2, "dist_max_factor": 0.35},
+    "fine":        {"cell_min_factor": 0.032, "cell_max_factor": 0.128, "dist_max_factor": 0.25},
+    "very_fine":   {"cell_min_factor": 0.02, "cell_max_factor": 0.08, "dist_max_factor": 0.175},
 }
 
 # Default symmetry for each geometry
@@ -68,9 +69,10 @@ DEFAULT_SYMMETRY = {
 
 # Refinement limits to prevent excessive cell counts
 REFINEMENT_LIMITS = {
-    "min_cell_size_factor": 0.002,  # Minimum cell size as fraction of object size
-    "max_refinement_ratio": 50,      # Max ratio of largest to smallest cells
-    "target_boundary_cells": 5,      # Target cells across thin shell
+    "min_cell_size_factor": 0.002,     # Minimum cell size as fraction of object size (2D)
+    "min_cell_size_factor_3d": 0.01,   # Minimum cell size as fraction of char_size (3D/STEP)
+    "max_refinement_ratio": 50,        # Max ratio of largest to smallest cells
+    "target_boundary_cells": 5,        # Target cells across thin shell
 }
 
 # Default maximum cell count to prevent accidentally creating huge meshes
@@ -1395,8 +1397,8 @@ def _create_custom_step(
             # Target cells across the wavelength
             cell_min_wavelength = wavelength / REFINEMENT_LIMITS["target_boundary_cells"]
 
-            # Safeguard: don't go smaller than 0.01 × char_size
-            cell_min_floor = 0.01 * char_size
+            # Safeguard: don't go smaller than min_cell_size_factor_3d × char_size
+            cell_min_floor = REFINEMENT_LIMITS["min_cell_size_factor_3d"] * char_size
 
             if cell_min_wavelength < cell_min_floor:
                 cell_min_wavelength = cell_min_floor
