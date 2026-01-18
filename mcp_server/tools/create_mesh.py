@@ -74,7 +74,7 @@ REFINEMENT_LIMITS = {
 }
 
 # Default maximum cell count to prevent accidentally creating huge meshes
-DEFAULT_MAX_CELLS = 200000
+DEFAULT_MAX_CELLS = 500000
 
 
 def validate_geometry_params(geometry: str, params: dict) -> list[str]:
@@ -1412,7 +1412,8 @@ def _create_custom_step(
 
         # Disable gmsh's automatic size sources so our fields have full control
         # Without this, curvature, boundary extension, and CAD point sizes can
-        # silently override the background field
+        # silently override the background field. Note this can help with some geometries, 
+        # but can increase the number of cells, hence it is left to increase the quality if needed.
         gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
         gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
         gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)

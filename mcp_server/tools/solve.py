@@ -27,10 +27,9 @@ Parameters:
 - alpha: Dimensionless coupling constant (from calculate_physical_parameters)
 - density: Dimensionless density ρ̂ = ρ/ρ₀ per region (e.g., if ρ₀ = vacuum density, then vacuum → 1.0)
 - n: Potential power (default: 1)
-- method: Solver method - "picard", "newton", or "auto"
 - tol: Convergence tolerance (default: 1e-14)
 - max_iter: Maximum iterations (default: 100)
-- relaxation: Relaxation factor for Picard (default: 1.0)
+- relaxation: Relaxation factor for Picard iteration (0-1]. In tests 1 performs well, and is faster, so is recommeneded. Default: 1.0
 - initial_guess: "constant" (default, recommended for SELCIE), "adiabatic", or "previous"
 """,
     inputSchema={
@@ -54,12 +53,6 @@ Parameters:
                 "description": "Potential power index. Default: 1",
                 "default": 1
             },
-            "method": {
-                "type": "string",
-                "enum": ["picard", "auto"],
-                "description": "Solver method. Default: auto (uses picard with relaxation based on alpha)",
-                "default": "auto"
-            },
             "tol": {
                 "type": "number",
                 "description": "Convergence tolerance. Default: 1e-14",
@@ -72,7 +65,7 @@ Parameters:
             },
             "relaxation": {
                 "type": "number",
-                "description": "Relaxation factor (0-1]. Default: 1.0",
+                "description": "Relaxation factor for Picard iteration (0-1]. In tests 1 performs well, and is faster, so is recommeneded. Default: 1.0",
                 "default": 1.0
             },
             "initial_guess": {
@@ -105,27 +98,6 @@ def _symmetry_to_selcie(symmetry: str) -> str:
     return mapping.get(symmetry, symmetry)
 
 
-def _choose_method(alpha: float, method: str) -> tuple[str, float]:
-    """
-    Choose solver method and relaxation based on alpha.
-
-    Returns (method, relaxation_factor)
-    """
-    if method == "picard":
-        return "picard", 1.0
-
-    # Auto mode: use picard with relaxation based on alpha
-    if alpha < 1:
-        return "picard", 1.0
-    elif alpha < 1000:
-        # Use relaxation for moderate nonlinearity
-        relax = max(0.5, 1.0 - alpha / 2000)
-        return "picard", relax
-    else:
-        # High alpha: use strong relaxation
-        return "picard", 0.5
-
-
 async def handle(arguments: dict) -> list[TextContent]:
     """Handle solve tool call."""
     import dolfin as d
@@ -139,7 +111,6 @@ async def handle(arguments: dict) -> list[TextContent]:
     alpha = arguments["alpha"]
     density_spec = arguments["density"]
     n = arguments.get("n", 1)
-    method = arguments.get("method", "auto")
     tol = arguments.get("tol", 1e-14)
     max_iter = arguments.get("max_iter", 100)
     relaxation = arguments.get("relaxation", 1.0)
@@ -227,11 +198,6 @@ async def handle(arguments: dict) -> list[TextContent]:
 
     # Build profiles list ordered by marker
     profiles = [marker_to_func[i] for i in range(n_subdomains)]
-
-    # Choose method
-    actual_method, auto_relaxation = _choose_method(alpha, method)
-    if method == "auto":
-        relaxation = auto_relaxation
 
     start_time = time.time()
 
@@ -427,7 +393,7 @@ async def handle(arguments: dict) -> list[TextContent]:
             "iterations": iterations,
             "final_du_norm": final_du_norm,
             "pde_residual": pde_residual,
-            "method_used": actual_method,
+            "method_used": "picard",
             "relaxation_used": relaxation,
             "initial_guess": initial_guess,
             "field_stats": {
@@ -465,7 +431,7 @@ async def handle(arguments: dict) -> list[TextContent]:
             "status": "failed",
             "error": str(e),
             "traceback": traceback.format_exc(),
-            "suggestion": "Check density specification and mesh compatibility. Try reducing alpha or using picard method with relaxation < 1."
+            "suggestion": "Check density specification and mesh compatibility. Try relaxation < 1 for difficult convergence. If geometry has small holes or high curvature, try increasing mesh resolution (e.g., 'fine' or 'very_fine')."
         }
         import json
         return [TextContent(type="text", text=json.dumps(error_result, indent=2))]
