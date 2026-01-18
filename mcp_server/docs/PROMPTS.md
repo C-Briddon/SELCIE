@@ -299,6 +299,21 @@
 > 
 > Explain your reasoning process. Save the results in an optimal directory. 
 
+ ### Step file (sphere baseline)
+
+> Generate a STEP file using GMSH for the following geometry:
+>
+> - Sphere with radius 0.1337
+>
+> Then solve the chamleleon field for this with the following parameters: 
+>
+> - Vaccum radius: 0.5
+> - Use α = 1e18 and n = 1
+> - Source density: 1e17
+> - Vacuum density: 1.0
+>
+> Plot slices of the field and gradient at different z values. Find the maximum gradient at a minimum distance of 0.05 from the source. 
+
  ### Step file (Eot-Wash type experiment)
 
 > Generate a STEP file using GMSH for the following geometry:
