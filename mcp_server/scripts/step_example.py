@@ -59,6 +59,11 @@ def parse_args():
         action="store_true",
         help="Enable physics-aware mesh refinement using solve parameters (alpha, density)",
     )
+    parser.add_argument(
+        "--use-single-object", "-s",
+        action="store_true",
+        help="Use single object mode (default: False)",
+    )
     return parser.parse_args()
 
 
@@ -69,6 +74,7 @@ async def main():
     # Import tool handlers
     from tools.create_mesh import handle as create_mesh
     from tools.plot_mesh import handle as plot_mesh
+    from tools.plot_step import handle as plot_step
     from tools.solve import handle as solve
     from tools.plot import handle as plot
 
@@ -101,9 +107,31 @@ async def main():
     print(f"Mesh quality: {args.quality}")
 
     # =========================================================================
+    # Step 0: Preview STEP geometry (before meshing)
+    # =========================================================================
+    print("\n[0/5] Previewing STEP geometry...")
+
+    preview_path = output_dir / f"{base_name}_preview.png"
+    preview_result = await plot_step({
+        "step_file": str(step_file),
+        "output_path": str(preview_path),
+        "title": f"{base_name} Geometry Preview",
+    })
+
+    preview_data = json.loads(preview_result[0].text)
+
+    if "error" in preview_data:
+        print(f"  Warning: {preview_data['error']['message']}")
+    else:
+        print(f"  Volumes: {preview_data['n_volumes']}")
+        print(f"  Extent: x={preview_data['extent']['x']:.3f}, y={preview_data['extent']['y']:.3f}, z={preview_data['extent']['z']:.3f}")
+        print(f"  Region names (after meshing): {preview_data['region_names']}")
+        print(f"  Preview saved to: {preview_path}")
+
+    # =========================================================================
     # Step 1: Create mesh from STEP file
     # =========================================================================
-    print("\n[1/4] Creating mesh from STEP file...")
+    print("\n[1/5] Creating mesh from STEP file...")
 
     # Build params - domain_radius is optional (tool auto-calculates as 1.5x extent if not provided)
     mesh_params = {"step_file": str(step_file)}
@@ -149,7 +177,7 @@ async def main():
     # =========================================================================
     # Step 2: Plot mesh
     # =========================================================================
-    print("\n[2/4] Plotting mesh...")
+    print("\n[2/5] Plotting mesh...")
 
     mesh_plot_path = output_dir / f"{base_name}_mesh.png"
     mesh_plot_result = await plot_mesh({
@@ -176,14 +204,14 @@ async def main():
     # =========================================================================
     # Step 3: Solve chameleon field equation
     # =========================================================================
-    print("\n[3/4] Solving chameleon field equation...")
+    print("\n[3/5] Solving chameleon field equation...")
 
     # Build density dict based on regions in mesh
     # For multi-object STEP files, regions are object_0, object_1, ... (sorted by z-centroid)
     regions = mesh_data["regions"]
     object_regions = [r for r in regions.keys() if r.startswith("object")]
 
-    if len(object_regions) == 1:
+    if len(object_regions) == 1 or args.use_single_object:
         # Single object: use "object"
         density = {
             "object": 1e17,
@@ -230,7 +258,7 @@ async def main():
     # =========================================================================
     # Step 4: Plot field profile
     # =========================================================================
-    print("\n[4/4] Plotting field profile...")
+    print("\n[4/5] Plotting field profile...")
 
     # Plot 1D radial profile
     field_1d_path = output_dir / f"{base_name}_field_1d.png"
@@ -355,6 +383,7 @@ async def main():
     print("Complete!")
     print("=" * 60)
     print(f"\nOutput files saved to: {output_dir}")
+    print(f"  - {base_name}_preview.png")
     print(f"  - {base_name}_mesh.png")
     print(f"  - {base_name}_field_1d.png")
     print(f"  - {base_name}_field_slice_xz.png")

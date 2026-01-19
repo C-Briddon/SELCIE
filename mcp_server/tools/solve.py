@@ -163,6 +163,15 @@ async def handle(arguments: dict) -> list[TextContent]:
     marker_to_func = {}
     density_stats = {"rho_min": float("inf"), "rho_max": float("-inf")}
 
+    # Expand "object" to all object_* regions if mesh has multi-region objects
+    if "object" in density_spec and "object" not in regions:
+        object_regions = [r for r in regions.keys() if r.startswith("object_")]
+        if object_regions:
+            object_density = density_spec.pop("object")
+            for obj_region in object_regions:
+                if obj_region not in density_spec:
+                    density_spec[obj_region] = object_density
+
     for region_name, density_value in density_spec.items():
         if region_name not in regions:
             return [TextContent(

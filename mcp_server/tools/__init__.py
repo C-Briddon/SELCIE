@@ -30,6 +30,10 @@ from .state import (
     CLEAR_TOOL,
     handle_clear,
 )
+from .plot_step import (
+    TOOL_DEFINITION as PLOT_STEP_TOOL,
+    handle as handle_plot_step,
+)
 
 __all__ = [
     "CALCULATE_PHYSICAL_PARAMETERS_TOOL",
@@ -48,4 +52,6 @@ __all__ = [
     "handle_get_state",
     "CLEAR_TOOL",
     "handle_clear",
+    "PLOT_STEP_TOOL",
+    "handle_plot_step",
 ]

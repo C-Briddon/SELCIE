@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-01-19 19:23_
+_Generated: 2026-01-19 23:16_
 
 ---
 
@@ -15,6 +15,7 @@ _Generated: 2026-01-19 19:23_
 - [get_state](#get_state)
 - [plot](#plot)
 - [plot_mesh](#plot_mesh)
+- [plot_step](#plot_step)
 - [solve](#solve)
 
 ---
@@ -275,6 +276,24 @@ Generate a visualization of a mesh showing the geometry and subdomain structure.
 
 - **`normal`** (array[number]): Normal vector of clip plane, e.g. [1, 0, 0] for x-plane.
 - **`origin`** (array[number]): Origin point of clip plane. Default: mesh center.
+
+---
+
+## plot_step
+
+Preview a STEP/IGES/BREP file geometry.
+
+Useful for verifying geometry before running a full simulation. Shows the CAD geometry with different colors for each volume.
+
+Returns an image of the geometry along with metadata (bounding box, number of volumes, region names, etc.).
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `step_file` | string | Yes | Path to STEP/IGES/BREP file |
+| `output_path` | string | No | Optional path to save image (PNG). If not provided, returns base64 image. |
+| `title` | string | No | Optional plot title |
 
 ---
 
