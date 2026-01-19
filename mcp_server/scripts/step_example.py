@@ -123,13 +123,14 @@ async def main():
     }
 
     # Add physics_params for mesh refinement if --physics flag is set
+    # Note: For multi-region STEP files, physics refinement uses max density across all objects
     if args.physics:
         create_mesh_args["physics_params"] = {
             "alpha": 1e18,
-            "density": {"object": 1e17, "vacuum": 1.0},
+            "density": {"object": 1e17, "vacuum": 1.0},  # Uses max object density for refinement
             "n": 1,
         }
-        print("  Physics-aware refinement: enabled")
+        print("  Physics-aware refinement: enabled (uses max object density)")
 
     mesh_result = await create_mesh(create_mesh_args)
 
@@ -176,24 +177,41 @@ async def main():
     # Step 3: Solve chameleon field equation
     # =========================================================================
     print("\n[3/4] Solving chameleon field equation...")
+
+    # Build density dict based on regions in mesh
+    # For multi-object STEP files, regions are object_0, object_1, ... (sorted by z-centroid)
+    regions = mesh_data["regions"]
+    object_regions = [r for r in regions.keys() if r.startswith("object")]
+
+    if len(object_regions) == 1:
+        # Single object: use "object"
+        density = {
+            "object": 1e17,
+            "vacuum": 1.0,
+        }
+    else:
+        # Multiple objects: assign different densities to each
+        # object_0 is lowest in z, object_1 next, etc.
+        density = {"vacuum": 1.0}
+        base_density = 1e17
+        for i, region in enumerate(sorted(object_regions)):
+            # Each successive object gets lower density (for demonstration)
+            density[region] = base_density / (10 ** (i * 3))
+
     print("  Parameters:")
     print("    alpha = 1e18")
     print("    n = 1")
-    print("    density(object) = 1e17")
-    print("    density(vacuum) = 1.0")
+    for region, rho in density.items():
+        print(f"    density({region}) = {rho:.0e}")
 
     solve_result = await solve({
         "mesh_id": mesh_id,
         "alpha": 1e18,
         "n": 1,
-        "density": {
-            "object": 1e17,
-            "vacuum": 1.0,
-        },
+        "density": density,
         "custom_id": solution_id,
         "max_iter": 200,
         "display_progress": True,
-        "method": "picard",
     })
 
     solve_data = json.loads(solve_result[0].text)

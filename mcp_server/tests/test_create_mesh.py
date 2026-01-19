@@ -492,10 +492,70 @@ class TestCreateMeshCustomStep:
         assert data["geometry"] == "custom_step"
         assert data["symmetry"] == "none"
         assert data["dimension"] == 3
-        assert "object" in data["regions"]
+        # Multi-object STEP files get object_0, object_1, etc.
+        assert "object_0" in data["regions"]
+        assert "object_1" in data["regions"]
         assert "vacuum" in data["regions"]
         assert "object_bounds" in data["domain_bounds"]
         assert data["domain_bounds"]["imported_file"] == "eotwash_disks.step"
+
+    @pytest.mark.asyncio
+    async def test_custom_step_single_object(self):
+        """Single-object STEP file uses 'object' name for backward compatibility."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "custom_step",
+            "params": {
+                "step_file": "tests/test_data/unit_cube.step",
+            },
+            "mesh_quality": "very_coarse",
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" not in data, f"Unexpected error: {data}"
+        # Single object uses "object" name for backward compatibility
+        assert "object" in data["regions"]
+        assert "vacuum" in data["regions"]
+        assert len(data["regions"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_custom_step_multi_region_solve(self):
+        """Multi-region STEP file can be solved with different densities."""
+        from tools.create_mesh import handle as create_mesh
+        from tools.solve import handle as solve
+
+        # Create mesh with two separate objects
+        result = await create_mesh({
+            "geometry": "custom_step",
+            "params": {
+                "step_file": "tests/test_data/two_disks_separate.step",
+            },
+            "mesh_quality": "very_coarse",
+        })
+
+        mesh_data = json.loads(result[0].text)
+        assert "error" not in mesh_data, f"Mesh error: {mesh_data}"
+        mesh_id = mesh_data["mesh_id"]
+
+        # Verify we have two object regions
+        assert "object_0" in mesh_data["regions"]
+        assert "object_1" in mesh_data["regions"]
+
+        # Solve with different densities per region
+        result = await solve({
+            "mesh_id": mesh_id,
+            "alpha": 1e8,
+            "density": {
+                "object_0": 1e10,
+                "object_1": 1e8,
+                "vacuum": 1.0,
+            },
+            "n": 1,
+        })
+
+        solve_data = json.loads(result[0].text)
+        assert solve_data.get("status") == "converged", f"Solve error: {solve_data}"
 
     @pytest.mark.asyncio
     async def test_custom_step_file_not_found(self):

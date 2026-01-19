@@ -76,7 +76,7 @@ REFINEMENT_LIMITS = {
 }
 
 # Default maximum cell count to prevent accidentally creating huge meshes
-DEFAULT_MAX_CELLS = 500000
+DEFAULT_MAX_CELLS = 1000000
 
 
 def validate_geometry_params(geometry: str, params: dict) -> list[str]:
@@ -334,7 +334,8 @@ TOOL_DEFINITION = Tool(
                     "extruded in z. Regions: object, vacuum [+wall]. Fixed symmetry: translation (2D).\n"
                     "- custom_3d: Arbitrary 3D shape from contours. Regions: object. Fixed symmetry: none (true 3D).\n"
                     "- custom_step: Import 3D geometry from STEP/IGES/BREP file. Object is centered in spherical vacuum domain. "
-                    "Regions: object, vacuum. Fixed symmetry: none (true 3D)."
+                    "Single solid: regions are 'object', 'vacuum'. Multiple solids: regions are 'object_0', 'object_1', ... "
+                    "(sorted by z-centroid, lowest first), plus 'vacuum'. Fixed symmetry: none (true 3D)."
                 ),
             },
             "params": {
@@ -1323,14 +1324,13 @@ def _create_custom_step(
         # We use the centroid/bounding box to classify each resulting volume
         all_volumes = [tag for dim, tag in fragment_result if dim == 3]
 
-        object_tags = []
+        object_volumes_info = []  # List of (tag, centroid_z, bounding_box)
         vacuum_tags = []
 
         for vol_tag in all_volumes:
             # Get bounding box of this volume
             bx1, by1, bz1, bx2, by2, bz2 = gmsh.model.occ.getBoundingBox(3, vol_tag)
             vol_center = ((bx1 + bx2) / 2, (by1 + by2) / 2, (bz1 + bz2) / 2)
-            vol_radius = np.sqrt(vol_center[0]**2 + vol_center[1]**2 + vol_center[2]**2)
             vol_size = max(bx2 - bx1, by2 - by1, bz2 - bz1)
 
             # Object volumes: centroid well inside domain, size << domain
@@ -1341,21 +1341,44 @@ def _create_custom_step(
                bz1 < -0.9 * domain_radius:
                 vacuum_tags.append(vol_tag)
             else:
-                object_tags.append(vol_tag)
+                # Store object info for sorting
+                object_volumes_info.append({
+                    "tag": vol_tag,
+                    "center": vol_center,
+                    "bbox": (bx1, by1, bz1, bx2, by2, bz2),
+                })
 
-        if not object_tags:
+        if not object_volumes_info:
             raise ValueError("No object volumes identified after fragment")
         if not vacuum_tags:
             raise ValueError("No vacuum volumes identified after fragment")
 
-        # Assign physical groups
-        # SELCIE solver expects markers 0 and 1
-        gmsh.model.addPhysicalGroup(3, object_tags, tag=0, name="object")
-        gmsh.model.addPhysicalGroup(3, vacuum_tags, tag=1, name="vacuum")
+        # Sort object volumes by z-centroid (lowest first) for consistent naming
+        object_volumes_info.sort(key=lambda v: v["center"][2])
+
+        # Assign physical groups for each object volume separately
+        # Markers: 0, 1, 2, ... for objects; last marker for vacuum
+        object_regions = []
+        all_object_tags = []
+        for i, vol_info in enumerate(object_volumes_info):
+            tag = vol_info["tag"]
+            all_object_tags.append(tag)
+            if len(object_volumes_info) == 1:
+                # Single object: use "object" name for backward compatibility
+                region_name = "object"
+            else:
+                # Multiple objects: use "object_0", "object_1", etc.
+                region_name = f"object_{i}"
+            gmsh.model.addPhysicalGroup(3, [tag], tag=i, name=region_name)
+            object_regions.append(region_name)
+
+        # Vacuum gets the next marker
+        vacuum_marker = len(object_volumes_info)
+        gmsh.model.addPhysicalGroup(3, vacuum_tags, tag=vacuum_marker, name="vacuum")
 
         # Get surfaces for each region
         object_surfaces = set()
-        for tag in object_tags:
+        for tag in all_object_tags:
             bounds = gmsh.model.getBoundary([(3, tag)], oriented=False)
             object_surfaces.update(abs(b[1]) for b in bounds)
 
@@ -1435,7 +1458,7 @@ def _create_custom_step(
         # Restrict object field to object volumes
         object_field = gmsh.model.mesh.field.add("Restrict")
         gmsh.model.mesh.field.setNumber(object_field, "InField", object_thresh)
-        gmsh.model.mesh.field.setNumbers(object_field, "VolumesList", object_tags)
+        gmsh.model.mesh.field.setNumbers(object_field, "VolumesList", all_object_tags)
 
         # Vacuum threshold field: grades from cell_min to vacuum_cell_max
         vacuum_thresh = gmsh.model.mesh.field.add("Threshold")
@@ -1519,7 +1542,7 @@ def _create_custom_step(
     os.remove(msh_file)
 
     # Return regions, bounds, and mesh_path
-    regions = ["object", "vacuum"]
+    regions = object_regions + ["vacuum"]
     bounds = {
         "object_bounds": {
             "x_min": float(xmin),

@@ -1,0 +1,14 @@
+# MCP Server additional requirements
+# (beyond standard SELCIE dependencies)
+#
+# SELCIE already provides: numpy, scipy, matplotlib, astropy, fenics/dolfin, gmsh
+
+# Model Context Protocol SDK
+mcp>=1.0.0
+
+# Optional: 3D mesh visualization (falls back to 2D plot if not installed)
+pyvista>=0.40.0
+
+# For testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0

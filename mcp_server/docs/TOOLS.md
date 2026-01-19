@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-01-18 20:31_
+_Generated: 2026-01-19 19:23_
 
 ---
 
@@ -88,11 +88,11 @@ CUSTOM SHAPES:
 - custom_2d_axial: Arbitrary 2D axisymmetric shape. Points are [r, z] with r >= 0, revolved around z-axis. Regions: object, vacuum [+wall]. Fixed symmetry: axial (2D).
 - custom_2d_translation: Arbitrary 2D shape with translation symmetry. Points are [x, y], extruded in z. Regions: object, vacuum [+wall]. Fixed symmetry: translation (2D).
 - custom_3d: Arbitrary 3D shape from contours. Regions: object. Fixed symmetry: none (true 3D).
-- custom_step: Import 3D geometry from STEP/IGES/BREP file. Object is centered in spherical vacuum domain. Regions: object, vacuum. Fixed symmetry: none (true 3D). |
+- custom_step: Import 3D geometry from STEP/IGES/BREP file. Object is centered in spherical vacuum domain. Single solid: regions are 'object', 'vacuum'. Multiple solids: regions are 'object_0', 'object_1', ... (sorted by z-centroid, lowest first), plus 'vacuum'. Fixed symmetry: none (true 3D). |
 | `params` | object | Yes | Geometry-specific parameters. |
 | `mesh_quality` | `very_coarse` | `coarse` | `medium` | `fine` | `very_fine` | No | Mesh resolution. Default: `"medium"` |
 | `custom_id` | string | No | Custom mesh ID. |
-| `allow_large_mesh` | boolean | No | Allow meshes exceeding 500,000 cells. Default: false. Default: `False` |
+| `allow_large_mesh` | boolean | No | Allow meshes exceeding 1,000,000 cells. Default: false. Default: `False` |
 | `physics_params` | object | No | Physics parameters for automatic thin-shell mesh refinement (recommended when available). Option 1: Provide 'lambda' dict mapping region names to Compton wavelengths. Option 2: Provide 'alpha', 'density' dict, and 'n' - lambdas will be computed per region. The mesh will be refined near boundaries of dense regions to resolve thin shells. |
 
 #### `params` options
