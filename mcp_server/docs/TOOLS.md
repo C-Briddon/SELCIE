@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-01-19 23:16_
+_Generated: 2026-01-20 22:54_
 
 ---
 
@@ -31,7 +31,7 @@ Convert physical chameleon parameters to SELCIE's dimensionless α and assess th
 | `beta` | number | Yes | Matter coupling strength β. M = M_pl/β where M_pl is Planck mass. Typical values: β=1 (gravitational strength), β=10^6-10^8 (lab experiments). |
 | `Lambda_eV` | number | No | Energy scale Λ in eV. Default 2.4e-3 (dark energy scale). Default: `0.0024` |
 | `n` | integer | No | Potential power in V(φ) = Λ⁴(1 + Λⁿ/φⁿ). Default 1. Default: `1` |
-| `rho_0` | number | Yes | Characteristic density scale of the system (e.g., central density, object density). Enters the α calculation as α ∝ 1/ρ₀. |
+| `rho_0` | number | No | Reference density scale for non-dimensionalization. Enters α as α ∝ 1/ρ₀. Optional: defaults to rho_min if provided. For best solver convergence, use the lowest density (e.g., vacuum) or an intermediate value. |
 | `rho_0_units` | `g/cm^3` | `kg/m^3` | `eV^4` | `M_sun/kpc^3` | `GeV^4` | Yes | Units of rho_0. |
 | `L` | number | Yes | Characteristic length scale of the system (e.g., object radius, domain size). Enters the α calculation as α ∝ 1/L². |
 | `L_units` | `m` | `cm` | `km` | `R_sun` | `kpc` | `Mpc` | `AU` | Yes | Units of L. |

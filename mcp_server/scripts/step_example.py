@@ -10,12 +10,6 @@ This script demonstrates the full workflow:
 
 Usage:
     python step_example.py [step_file] [--quality QUALITY] [--domain-radius R] [--physics]
-
-Parameters:
-- alpha = 1e18
-- n = 1
-- Source density: 1e17
-- Vacuum density: 1.0
 """
 
 import sys
@@ -30,6 +24,10 @@ import json
 
 from utils.session import reset_session
 
+SOURCE_DENSITY = 1e17
+VACUUM_DENSITY = 1.0
+ALPHA = 1e18
+N = 1
 
 def parse_args():
     """Parse command line arguments."""
@@ -63,6 +61,30 @@ def parse_args():
         "--use-single-object", "-s",
         action="store_true",
         help="Use single object mode (default: False)",
+    )
+    parser.add_argument(
+        "--alpha", "-a",
+        type=float,
+        default=ALPHA,
+        help=f"Alpha (default: {ALPHA:.0e})",
+    )
+    parser.add_argument(
+        "--n",
+        type=int,
+        default=N,
+        help=f"n parameter (default: {N})",
+    )
+    parser.add_argument(
+        "--source-density", "-d",
+        type=float,
+        default=SOURCE_DENSITY,
+        help=f"Source density (default: {SOURCE_DENSITY:.0e})",
+    )
+    parser.add_argument(
+        "--vacuum-density", "-v",
+        type=float,
+        default=VACUUM_DENSITY,
+        help=f"Vacuum density (default: {VACUUM_DENSITY:.0e})",
     )
     return parser.parse_args()
 
@@ -133,13 +155,13 @@ async def main():
     # =========================================================================
     print("\n[1/5] Creating mesh from STEP file...")
 
-    # Build params - domain_radius is optional (tool auto-calculates as 1.5x extent if not provided)
+    # Build params - domain_radius is optional (tool auto-calculates as 1.25x extent if not provided)
     mesh_params = {"step_file": str(step_file)}
     if args.domain_radius is not None:
         mesh_params["domain_radius"] = args.domain_radius
         print(f"  Using domain_radius: {args.domain_radius}")
     else:
-        print("  Domain radius: auto (1.5x geometry extent)")
+        print("  Domain radius: auto")
 
     # Build create_mesh arguments
     create_mesh_args = {
@@ -154,9 +176,9 @@ async def main():
     # Note: For multi-region STEP files, physics refinement uses max density across all objects
     if args.physics:
         create_mesh_args["physics_params"] = {
-            "alpha": 1e18,
-            "density": {"object": 1e17, "vacuum": 1.0},  # Uses max object density for refinement
-            "n": 1,
+            "alpha": args.alpha,
+            "density": {"object": args.source_density, "vacuum": args.vacuum_density},
+            "n": args.n,
         }
         print("  Physics-aware refinement: enabled (uses max object density)")
 
@@ -173,6 +195,7 @@ async def main():
     print(f"  Vertices: {mesh_data['n_vertices']:,}")
     print(f"  Regions: {mesh_data['regions']}")
     print(f"  Path: {mesh_data['mesh_path']}")
+    print(f"  Physics refinement: {mesh_data.get('physics_refinement', False)}")
 
     # =========================================================================
     # Step 2: Plot mesh
@@ -214,28 +237,28 @@ async def main():
     if len(object_regions) == 1 or args.use_single_object:
         # Single object: use "object"
         density = {
-            "object": 1e17,
-            "vacuum": 1.0,
+            "object": args.source_density,
+            "vacuum": args.vacuum_density,
         }
     else:
         # Multiple objects: assign different densities to each
         # object_0 is lowest in z, object_1 next, etc.
-        density = {"vacuum": 1.0}
-        base_density = 1e17
+        density = {"vacuum": args.vacuum_density}
+        base_density = args.source_density
         for i, region in enumerate(sorted(object_regions)):
             # Each successive object gets lower density (for demonstration)
             density[region] = base_density / (10 ** (i * 3))
 
     print("  Parameters:")
-    print("    alpha = 1e18")
-    print("    n = 1")
+    print(f"    alpha = {args.alpha:.0e}")
+    print(f"    n = {args.n}")
     for region, rho in density.items():
         print(f"    density({region}) = {rho:.0e}")
 
     solve_result = await solve({
         "mesh_id": mesh_id,
-        "alpha": 1e18,
-        "n": 1,
+        "alpha": args.alpha,
+        "n": args.n,
         "density": density,
         "custom_id": solution_id,
         "max_iter": 200,

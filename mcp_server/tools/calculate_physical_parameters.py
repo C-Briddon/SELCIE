@@ -59,8 +59,9 @@ TOOL_DEFINITION = Tool(
             "rho_0": {
                 "type": "number",
                 "description": (
-                    "Characteristic density scale of the system (e.g., central density, "
-                    "object density). Enters the α calculation as α ∝ 1/ρ₀."
+                    "Reference density scale for non-dimensionalization. Enters α as α ∝ 1/ρ₀. "
+                    "Optional: defaults to rho_min if provided. For best solver convergence, use "
+                    "the lowest density (e.g., vacuum) or an intermediate value."
                 ),
             },
             "rho_0_units": {
@@ -95,7 +96,7 @@ TOOL_DEFINITION = Tool(
                 ),
             },
         },
-        "required": ["beta", "rho_0", "rho_0_units", "L", "L_units"],
+        "required": ["beta", "rho_0_units", "L", "L_units"],
     },
 )
 
@@ -105,7 +106,6 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
 
     # Extract required parameters
     beta = args["beta"]
-    rho_0 = args["rho_0"]
     rho_0_units = args["rho_0_units"]
     L = args["L"]
     L_units = args["L_units"]
@@ -115,6 +115,19 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
     n = args.get("n", 1)
     rho_max = args.get("rho_max")
     rho_min = args.get("rho_min")
+    rho_0 = args.get("rho_0")
+
+    # Default rho_0 to rho_min if not provided
+    if rho_0 is None:
+        if rho_min is not None:
+            rho_0 = rho_min
+        else:
+            return [TextContent(type="text", text=json.dumps({
+                "error": {
+                    "code": "MISSING_PARAMETER",
+                    "message": "Either rho_0 or rho_min must be provided",
+                }
+            }, indent=2))]
 
     # Validate inputs
     if beta <= 0:
@@ -207,6 +220,18 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
 
     # Build result
     result: dict[str, Any] = {
+        "rho_0": rho_0,
+        "rho_0_units": rho_0_units,
+        "rho_0_note": (
+            "Reference density for non-dimensionalization. "
+            "For solve tool: use ρ̂ = ρ_physical / rho_0 as density values."
+        ),
+        "L": L,
+        "L_units": L_units,
+        "L_note": (
+            "Reference length for non-dimensionalization. "
+            "For mesh/solve tools: use x̂ = x_physical / L as coordinates."
+        ),
         "alpha": alpha,
         "n": n,
         "grad_to_acceleration_g": force_conversion,

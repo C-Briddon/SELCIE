@@ -1295,9 +1295,9 @@ def _create_custom_step(
         # Use min extent to capture thin features, but clamp to avoid pathological cases
         char_size = max(min(dx, dy, dz), 0.1 * max_extent)
 
-        # Auto-calculate domain_radius if not provided (1.5x the max extent)
+        # Auto-calculate domain_radius if not provided (give room for field to decay outside of domain)
         if domain_radius is None:
-            domain_radius = max_extent * 1.5
+            domain_radius = max_extent
 
         # Center at origin
         cx, cy, cz = (xmin + xmax) / 2, (ymin + ymax) / 2, (zmin + zmax) / 2
@@ -1331,14 +1331,13 @@ def _create_custom_step(
             # Get bounding box of this volume
             bx1, by1, bz1, bx2, by2, bz2 = gmsh.model.occ.getBoundingBox(3, vol_tag)
             vol_center = ((bx1 + bx2) / 2, (by1 + by2) / 2, (bz1 + bz2) / 2)
-            vol_size = max(bx2 - bx1, by2 - by1, bz2 - bz1)
 
-            # Object volumes: centroid well inside domain, size << domain
+            # Object volumes: don't extend to domain boundary
             # Vacuum: extends to domain boundary
-            if vol_size > 0.9 * domain_radius or bx2 > 0.9 * domain_radius or \
-               bx1 < -0.9 * domain_radius or by2 > 0.9 * domain_radius or \
-               by1 < -0.9 * domain_radius or bz2 > 0.9 * domain_radius or \
-               bz1 < -0.9 * domain_radius:
+            boundary_threshold = 0.9 * domain_radius
+            if bx2 > boundary_threshold or bx1 < -boundary_threshold or \
+               by2 > boundary_threshold or by1 < -boundary_threshold or \
+               bz2 > boundary_threshold or bz1 < -boundary_threshold:
                 vacuum_tags.append(vol_tag)
             else:
                 # Store object info for sorting
