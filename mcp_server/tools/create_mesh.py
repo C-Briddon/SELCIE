@@ -69,8 +69,8 @@ DEFAULT_SYMMETRY = {
 
 # Refinement limits to prevent excessive cell counts
 REFINEMENT_LIMITS = {
-    "min_cell_size_factor": 0.002,     # Minimum cell size as fraction of object size (2D)
-    "min_cell_size_factor_3d": 0.01,   # Minimum cell size as fraction of char_size (3D/STEP)
+    "min_cell_size_factor": 0.001,     # Minimum cell size as fraction of object size (2D)
+    "min_cell_size_factor_3d": 0.005,   # Minimum cell size as fraction of char_size (3D/STEP)
     "max_refinement_ratio": 50,        # Max ratio of largest to smallest cells
     "target_boundary_cells": 5,        # Target cells across thin shell
 }
@@ -290,6 +290,9 @@ TOOL_DEFINITION = Tool(
         "symmetry, and mesh refinement. Templates include object-in-vacuum "
         "(sphere_in_vacuum, ellipse_in_vacuum, etc.), plain domains (box_2d, disk, etc.), "
         "and custom shapes from file.\n\n"
+        "All distances (object_radius, domain_radius, etc.) are dimensionless. "
+        "If using physical parameters from calculate_physical_parameters, distances should be "
+        "in units of L: x̂ = x_physical / L.\n\n"
         "IMPORTANT: For thin-shell problems (high α, high density contrast), provide "
         "physics_params with alpha and density to enable automatic mesh refinement "
         "near object boundaries. This ensures the thin shell region is properly resolved."

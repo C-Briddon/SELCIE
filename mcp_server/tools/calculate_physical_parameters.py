@@ -230,7 +230,7 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
         "L_units": L_units,
         "L_note": (
             "Reference length for non-dimensionalization. "
-            "For mesh/solve tools: use x̂ = x_physical / L as coordinates."
+            "For mesh/solve tools: use x̂ = x_physical / L as coordinates. All mesh distances and step files should be in units of L."
         ),
         "alpha": alpha,
         "n": n,

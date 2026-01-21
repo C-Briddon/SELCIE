@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-01-21 10:50_
+_Generated: 2026-01-21 12:59_
 
 ---
 
@@ -58,6 +58,8 @@ Can clear all objects, just meshes, just solutions, or specific IDs.
 ## create_mesh
 
 Generate a finite element mesh for chameleon field simulations. Uses geometry templates that automatically handle subdomain creation, symmetry, and mesh refinement. Templates include object-in-vacuum (sphere_in_vacuum, ellipse_in_vacuum, etc.), plain domains (box_2d, disk, etc.), and custom shapes from file.
+
+All distances (object_radius, domain_radius, etc.) are dimensionless. If using physical parameters from calculate_physical_parameters, distances should be in units of L: x̂ = x_physical / L.
 
 IMPORTANT: For thin-shell problems (high α, high density contrast), provide physics_params with alpha and density to enable automatic mesh refinement near object boundaries. This ensures the thin shell region is properly resolved.
 
@@ -307,7 +309,9 @@ Uses SELCIE's Picard or Newton solver to compute the chameleon scalar field
 throughout the domain. The dimensionless field equation is:
     α ∇²φ + φ^{-(n+1)} = ρ̂
 
-where ρ̂ = ρ/ρ₀ is the dimensionless density (ρ₀ is the reference density used to compute α).
+All values are dimensionless. If using physical parameters from calculate_physical_parameters:
+- Density: ρ̂ = ρ_physical / rho_0
+- Coordinates in mesh: x̂ = x_physical / L
 
 Parameters:
 - mesh_id: Reference to a previously created mesh

@@ -449,27 +449,28 @@ Plot slices of the field and gradient at different z values. Find the maximum gr
 ```
 Generate a STEP file using GMSH for the following geometry:
 
- Two parallel circular disks with holes, used for gravitational force measurements:
+ Two parallel circular disks (each with density 2.70 g/cm^3) with holes, used for gravitational force measurements:
 
  Disk parameters:
- - Outer radius: 0.5
- - Thickness: 0.05
+ - Outer radius: 5 cm
+ - Thickness: 0.5 cm
  - Number of holes: 10 (arranged in a circle)
- - Hole radius: 0.08
- - Hole pattern radius: 0.3 (distance from disk center to hole centers)
+ - Hole radius: 0.8 cm
+ - Hole pattern radius: 3 cm (distance from disk center to hole centers)
 
  Arrangement:
- - Disk 1 centered at z = 0.2
- - Disk 2 centered at z = -0.2
+ - Disk 1 centered at z = 2 cm
+ - Disk 2 centered at z = -2 cm
  - Both disks aligned on the z-axis
  - Holes in disk 2 rotated by 18 degrees relative to disk 1
 
+ They are in a vacuum with density 1e-13 g/cm^3. 
+
 Then solve the chamleleon field for this with the following parameters:
 
-- Vaccum radius: 2.0
-- Use α = 1e18 and n = 1
-- Source density: 1e17
-- Vacuum density: 1.0
+- Use beta=1 and n = 1
 
 Plot slices of the field and gradient at different z values. Compute the torque for the upper and lower discs.
+
+Put all the plots in the current working directory.
 ```

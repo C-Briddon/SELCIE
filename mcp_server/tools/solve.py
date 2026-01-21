@@ -20,7 +20,9 @@ Uses SELCIE's Picard or Newton solver to compute the chameleon scalar field
 throughout the domain. The dimensionless field equation is:
     α ∇²φ + φ^{-(n+1)} = ρ̂
 
-where ρ̂ = ρ/ρ₀ is the dimensionless density (ρ₀ is the reference density used to compute α).
+All values are dimensionless. If using physical parameters from calculate_physical_parameters:
+- Density: ρ̂ = ρ_physical / rho_0
+- Coordinates in mesh: x̂ = x_physical / L
 
 Parameters:
 - mesh_id: Reference to a previously created mesh
