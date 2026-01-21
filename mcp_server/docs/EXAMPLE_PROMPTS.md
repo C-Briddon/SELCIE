@@ -444,7 +444,7 @@ Then solve the chamleleon field for this with the following parameters:
 Plot slices of the field and gradient at different z values. Find the maximum gradient at a minimum distance of 0.05 from the source.
 ```
 
-### Step file (Eot-Wash type experiment)
+### Step file (Eot-Wash type experiment, beta=0.1 to increase lambda)
 
 ```
 Generate a STEP file using GMSH for the following geometry:
@@ -468,7 +468,7 @@ Generate a STEP file using GMSH for the following geometry:
 
 Then solve the chamleleon field for this with the following parameters:
 
-- Use beta=1 and n = 1
+- Use beta=0.1 and n = 1
 
 Plot slices of the field and gradient at different z values. Compute the torque for the upper and lower discs.
 

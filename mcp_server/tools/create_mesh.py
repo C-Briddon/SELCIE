@@ -76,7 +76,7 @@ REFINEMENT_LIMITS = {
 }
 
 # Default maximum cell count to prevent accidentally creating huge meshes
-DEFAULT_MAX_CELLS = 1000000
+DEFAULT_MAX_CELLS = 2000000
 
 
 def validate_geometry_params(geometry: str, params: dict) -> list[str]:
@@ -292,7 +292,7 @@ TOOL_DEFINITION = Tool(
         "and custom shapes from file.\n\n"
         "All distances (object_radius, domain_radius, etc.) are dimensionless. "
         "If using physical parameters from calculate_physical_parameters, distances should be "
-        "in units of L: x̂ = x_physical / L.\n\n"
+        "in units of L: x̂ = x_physical / L.\n\n. This includes all mesh distances and step file distances."
         "IMPORTANT: For thin-shell problems (high α, high density contrast), provide "
         "physics_params with alpha and density to enable automatic mesh refinement "
         "near object boundaries. This ensures the thin shell region is properly resolved."
