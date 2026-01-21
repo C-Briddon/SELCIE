@@ -231,6 +231,7 @@ def estimate_physics_refinement(
     min_shell = object_size * REFINEMENT_LIMITS["min_cell_size_factor"] * 3
     max_shell = object_size * 0.5  # Can't be larger than half the object
 
+    hit_min_shell = shell_thickness < min_shell
     shell_thickness = max(min_shell, min(max_shell, shell_thickness))
 
     # Target cell size to resolve shell with ~5 cells
@@ -238,6 +239,7 @@ def estimate_physics_refinement(
 
     # Apply minimum cell size limit
     min_allowed = object_size * REFINEMENT_LIMITS["min_cell_size_factor"]
+    hit_cell_min_limit = target_cell_min < min_allowed
     target_cell_min = max(min_allowed, target_cell_min)
 
     # Ensure refinement ratio isn't too extreme
@@ -248,13 +250,18 @@ def estimate_physics_refinement(
     # Calculate refinement zone - extend 2-3 shell thicknesses from boundary
     dist_max = min(3 * shell_thickness, base_quality["dist_max_factor"] * object_size)
 
-    return {
+    result = {
         "cell_min_factor": target_cell_min / object_size,
         "cell_max_factor": base_quality["cell_max_factor"],
         "dist_max_factor": dist_max / object_size,
-        "shell_thickness": shell_thickness,
         "physics_refined": True,
     }
+
+    # Track if limits were hit
+    if hit_min_shell or hit_cell_min_limit:
+        result["cell_min_limited"] = True
+
+    return result
 
 
 def _compute_lambda(alpha: float, rho: float, n: int = 1) -> float:
@@ -503,6 +510,7 @@ def _create_sphere_in_vacuum(
         "r_max": domain_radius,
         "z_min": -domain_radius,
         "z_max": domain_radius,
+        "cell_min": cell_min,
     }
 
     return regions, bounds
@@ -556,6 +564,7 @@ def _create_ellipse_in_vacuum(
         "r_max": domain_radius,
         "z_min": -domain_radius,
         "z_max": domain_radius,
+        "cell_min": cell_min,
     }
 
     return regions, bounds
@@ -593,6 +602,7 @@ def _create_disk(
         "r_max": domain_radius,
         "z_min": -domain_radius,
         "z_max": domain_radius,
+        "cell_min": cell_min,
     }
 
     return regions, bounds
@@ -623,6 +633,7 @@ def _create_box_2d(
         "x_max": width / 2,
         "y_min": -height / 2,
         "y_max": height / 2,
+        "cell_min": cell_min,
     }
 
     return regions, bounds
@@ -686,6 +697,7 @@ def _create_parallel_plates(
         "x_max": total_width,
         "y_min": 0,
         "y_max": domain_height,
+        "cell_min": min(cell_min_plate, cell_min_vac),
     }
 
     return regions, bounds
@@ -759,6 +771,7 @@ def _create_shell_in_vacuum(
         "r_max": domain_radius,
         "z_min": -domain_radius,
         "z_max": domain_radius,
+        "cell_min": cell_min,
     }
 
     return regions, bounds
@@ -810,6 +823,7 @@ def _create_cylinder_in_vacuum(
         "r_max": domain_radius,
         "z_min": -domain_radius,
         "z_max": domain_radius,
+        "cell_min": cell_min,
     }
 
     return regions, bounds
@@ -847,6 +861,7 @@ def _create_sphere_domain(
         "r_max": domain_radius,
         "z_min": -domain_radius,
         "z_max": domain_radius,
+        "cell_min": cell_min,
     }
 
     return regions, bounds
@@ -911,6 +926,7 @@ def _create_sphere_in_profile(
         "r_max": domain_radius,
         "z_min": -domain_radius,
         "z_max": domain_radius,
+        "cell_min": cell_min,
     }
     return regions, bounds
 
@@ -971,6 +987,7 @@ def _create_two_spheres(
         "r_max": domain_radius,
         "z_min": -domain_radius,
         "z_max": domain_radius,
+        "cell_min": min(cell_min, cell_min2),
     }
 
     return regions, bounds
@@ -1038,6 +1055,7 @@ def _create_sphere_near_wall(
         "r_max": domain_radius,
         "z_min": -wall_thickness,  # Bottom of wall
         "z_max": domain_radius,
+        "cell_min": min(wall_cell_min, cell_min),
     }
 
     return regions, bounds
@@ -1071,6 +1089,7 @@ def _create_box_3d(
         "y_max": height / 2,
         "z_min": -depth / 2,
         "z_max": depth / 2,
+        "cell_min": cell_min,
     }
 
     return regions, bounds
@@ -1170,7 +1189,8 @@ def _create_custom_2d(
             "x_max": float(np.max(x_coords)),
             "y_min": float(np.min(y_coords)),
             "y_max": float(np.max(y_coords)),
-        }
+        },
+        "cell_min": cell_min,
     }
 
     return regions, bounds
@@ -1226,6 +1246,7 @@ def _create_custom_3d(
         "y_max": float(np.max(all_points[:, 1])),
         "z_min": float(np.min(all_points[:, 2])),
         "z_max": float(np.max(all_points[:, 2])),
+        "cell_min": cell_min,
     }
 
     return regions, bounds
@@ -1422,7 +1443,8 @@ def _create_custom_step(
             # Safeguard: don't go smaller than min_cell_size_factor_3d × char_size
             cell_min_floor = REFINEMENT_LIMITS["min_cell_size_factor_3d"] * char_size
 
-            if cell_min_wavelength < cell_min_floor:
+            hit_cell_min_limit = cell_min_wavelength < cell_min_floor
+            if hit_cell_min_limit:
                 cell_min_wavelength = cell_min_floor
 
             # Only refine if wavelength requires finer cells than quality preset
@@ -1430,6 +1452,15 @@ def _create_custom_step(
                 cell_min = cell_min_wavelength
                 # Adjust dist_max to transition over ~3 wavelengths
                 dist_max = min(3 * wavelength, dist_max)
+
+            # Add computed values to physics_info for output
+            physics_info["char_size"] = char_size
+            if hit_cell_min_limit:
+                physics_info["cell_min_limited"] = True
+                physics_info["cell_min_limit_note"] = (
+                    f"λ_min ({wavelength:.2e}) requires finer cells than mesh limit allows. "
+                    f"Integrated quantities (force, torque) may be inaccurate for screened objects."
+                )
 
         # Vacuum max cell size scales with domain_radius for efficiency
         vacuum_cell_max = cell_max_factor * domain_radius
@@ -1556,6 +1587,7 @@ def _create_custom_step(
         "r_max": domain_radius,
         "imported_file": os.path.basename(step_file),
         "char_size": char_size,
+        "cell_min": cell_min,
     }
 
     return regions, bounds, mesh_path
@@ -1699,10 +1731,9 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
         min_lambda = min(lambda_per_region.values())
         min_lambda_region = min(lambda_per_region, key=lambda k: lambda_per_region[k])
 
-        # Determine subdomain size for physics refinement
-        # Use characteristic size based on geometry
+        # Determine subdomain size (characteristic object size) for cell_min calculation
+        # This is needed both for physics refinement and for reporting cell_min
         subdomain_size = None
-
         if geometry == "sphere_in_vacuum":
             subdomain_size = params.get("object_radius")
         elif geometry == "ellipse_in_vacuum":
@@ -1724,12 +1755,10 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
                 import numpy as np
                 pts = np.array(params["points"])
                 subdomain_size = float(np.max(pts) - np.min(pts)) / 2
-            else:
-                subdomain_size = None
-        elif geometry in ("custom_step", "custom_3d"):
-            # For STEP/custom 3D, we don't know size until import
-            # Pass lambda info directly to mesh function which uses char_size
-            subdomain_size = None
+        # For custom_step/custom_3d, subdomain_size stays None (computed from char_size inside function)
+
+        # For STEP/custom 3D, pass lambda info directly to mesh function
+        if geometry in ("custom_step", "custom_3d"):
             physics_info = {
                 "lambda_per_region": lambda_per_region,
                 "lambda_min": min_lambda,
@@ -1753,9 +1782,6 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
                     "lambda_per_region": lambda_per_region,
                     "lambda_min": min_lambda,
                     "lambda_min_region": min_lambda_region,
-                    "shell_thickness": quality.get("shell_thickness"),
-                    "cell_min": quality["cell_min_factor"] * subdomain_size,
-                    "subdomain_size": subdomain_size,
                     "refinement_applied": True,
                 }
                 # Include input params if lambda was computed from alpha/density
@@ -1765,6 +1791,13 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
                         "density": {k: extract_density_value(v, symmetry, geometry) for k, v in physics_params.get("density", {}).items()},
                         "n": physics_params.get("n", 1),
                     }
+                # Add warning if cell size limit was hit
+                if quality.get("cell_min_limited"):
+                    physics_info["cell_min_limited"] = True
+                    physics_info["cell_min_limit_note"] = (
+                        f"λ_min ({min_lambda:.2e}) requires finer cells than mesh limit allows. "
+                        f"Integrated quantities (force, torque) may be inaccurate for screened objects."
+                    )
 
     # Determine SELCIE symmetry parameter
     selcie_symmetry = "vertical" if symmetry == "axial" else None

@@ -195,6 +195,7 @@ async def main():
     print(f"  Vertices: {mesh_data['n_vertices']:,}")
     print(f"  Regions: {mesh_data['regions']}")
     print(f"  Path: {mesh_data['mesh_path']}")
+    print(f"  Cell min: {mesh_data['domain_bounds']['cell_min']:.3e}")
     print(f"  Physics refinement: {mesh_data.get('physics_refinement', False)}")
 
     # =========================================================================

@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-01-20 22:54_
+_Generated: 2026-01-21 10:50_
 
 ---
 
@@ -155,6 +155,8 @@ Quantities (for integrate mode) - all in rescaled (dimensionless) units:
 - torque: Torque τ = ∫(r-r₀)×(ρ̂∇φ̂) dV̂ around torque_origin. Returns τ_x, τ_y, τ_z. Multiply by torque_scale_Nm to get Newton-meters.
 - mass: Total mass M = ∫ρ̂ dV̂. Multiply by mass_scale_kg to get kg.
 - bounds: Optional axis cuts (x_min, x_max, y_min, y_max, z_min, z_max) to restrict integration to a subregion (e.g., upper disk only).
+
+Note: For screened objects, force/torque contributions come from a thin shell of thickness ~λ near the surface. For accurate integrated quantities, cell_min must be smaller than λ. Check physics_refinement.cell_min vs physics_refinement.lambda_min from create_mesh output.
 
 ### Parameters
 
