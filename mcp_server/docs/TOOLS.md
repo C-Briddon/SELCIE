@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-01-21 12:59_
+_Generated: 2026-01-21 14:24_
 
 ---
 
@@ -22,7 +22,11 @@ _Generated: 2026-01-21 12:59_
 
 ## calculate_physical_parameters
 
-Convert physical chameleon parameters to SELCIE's dimensionless α and assess the screening regime using the Compton wavelength criterion. Use this first to determine if SELCIE is needed or if analytic solutions suffice. Returns the dimensionless Compton wavelength λ̂(ρ̂) = √(α/(n+1)) × ρ̂^{-(n+2)/(2(n+1))} at the density extremes. Since λ̂ is in units of L, compare to 1: λ̂ << 1 means adiabatic (field tracks ρ̂^{-1/(n+1)}), λ̂ >> 1 means field is set by boundaries, λ̂ ~ 1 is the transition region where SELCIE is needed. Also returns conversion factors: grad_to_acceleration_g converts dimensionless ∇φ to acceleration in units of g; mass_scale_kg, force_scale_N, and torque_scale_Nm convert integrate mode outputs to physical mass (kg), force (N), and torque (N·m).
+Convert physical chameleon parameters to SELCIE's dimensionless α and assess the screening regime using the Compton wavelength criterion.
+
+IMPORTANT: If working with physical units, call this tool FIRST before creating geometry (STEP files) or meshes. The returned coordinate_scaling factor must be applied to all physical dimensions when creating geometry.
+
+Returns the dimensionless Compton wavelength λ̂(ρ̂) = √(α/(n+1)) × ρ̂^{-(n+2)/(2(n+1))} at the density extremes. Since λ̂ is in units of L, compare to 1: λ̂ << 1 means adiabatic (field tracks ρ̂^{-1/(n+1)}), λ̂ >> 1 means field is set by boundaries, λ̂ ~ 1 is the transition region where SELCIE is needed. Also returns conversion factors: grad_to_acceleration_g converts dimensionless ∇φ to acceleration in units of g; mass_scale_kg, force_scale_N, and torque_scale_Nm convert integrate mode outputs to physical mass (kg), force (N), and torque (N·m).
 
 ### Parameters
 
@@ -61,7 +65,7 @@ Generate a finite element mesh for chameleon field simulations. Uses geometry te
 
 All distances (object_radius, domain_radius, etc.) are dimensionless. If using physical parameters from calculate_physical_parameters, distances should be in units of L: x̂ = x_physical / L.
 
-IMPORTANT: For thin-shell problems (high α, high density contrast), provide physics_params with alpha and density to enable automatic mesh refinement near object boundaries. This ensures the thin shell region is properly resolved.
+. This includes all mesh distances and step file distances.IMPORTANT: For thin-shell problems (high α, high density contrast), provide physics_params with alpha and density to enable automatic mesh refinement near object boundaries. This ensures the thin shell region is properly resolved.
 
 ### Parameters
 
@@ -95,7 +99,7 @@ CUSTOM SHAPES:
 | `params` | object | Yes | Geometry-specific parameters. |
 | `mesh_quality` | `very_coarse` | `coarse` | `medium` | `fine` | `very_fine` | No | Mesh resolution. Default: `"medium"` |
 | `custom_id` | string | No | Custom mesh ID. |
-| `allow_large_mesh` | boolean | No | Allow meshes exceeding 1,000,000 cells. Default: false. Default: `False` |
+| `allow_large_mesh` | boolean | No | Allow meshes exceeding 2,000,000 cells. Default: false. Default: `False` |
 | `physics_params` | object | No | Physics parameters for automatic thin-shell mesh refinement (recommended when available). Option 1: Provide 'lambda' dict mapping region names to Compton wavelengths. Option 2: Provide 'alpha', 'density' dict, and 'n' - lambdas will be computed per region. The mesh will be refined near boundaries of dense regions to resolve thin shells. |
 
 #### `params` options

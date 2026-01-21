@@ -26,10 +26,12 @@ TOOL_DEFINITION = Tool(
     name="calculate_physical_parameters",
     description=(
         "Convert physical chameleon parameters to SELCIE's dimensionless α and assess "
-        "the screening regime using the Compton wavelength criterion. Use this first to "
-        "determine if SELCIE is needed or if analytic solutions suffice. Returns the "
-        "dimensionless Compton wavelength λ̂(ρ̂) = √(α/(n+1)) × ρ̂^{-(n+2)/(2(n+1))} at "
-        "the density extremes. Since λ̂ is in units of L, compare to 1: λ̂ << 1 means adiabatic "
+        "the screening regime using the Compton wavelength criterion.\n\n"
+        "IMPORTANT: If working with physical units, call this tool FIRST before creating "
+        "geometry (STEP files) or meshes. The returned coordinate_scaling factor must be "
+        "applied to all physical dimensions when creating geometry.\n\n"
+        "Returns the dimensionless Compton wavelength λ̂(ρ̂) = √(α/(n+1)) × ρ̂^{-(n+2)/(2(n+1))} "
+        "at the density extremes. Since λ̂ is in units of L, compare to 1: λ̂ << 1 means adiabatic "
         "(field tracks ρ̂^{-1/(n+1)}), λ̂ >> 1 means field is set by boundaries, λ̂ ~ 1 is the "
         "transition region where SELCIE is needed. Also returns conversion factors: "
         "grad_to_acceleration_g converts dimensionless ∇φ to acceleration in units of g; "
@@ -230,7 +232,12 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
         "L_units": L_units,
         "L_note": (
             "Reference length for non-dimensionalization. "
-            "For mesh/solve tools: use x̂ = x_physical / L as coordinates. All mesh distances and step files should be in units of L."
+            "For mesh/solve tools: use x̂ = x_physical / L as coordinates."
+        ),
+        "coordinate_scaling": 1.0 / L,
+        "coordinate_scaling_note": (
+            f"Multiply physical coordinates by this factor ({1.0/L:.6e}) to get dimensionless coordinates. "
+            f"STEP files must be scaled: if your geometry is in {L_units}, scale by {1.0/L:.6e} before meshing."
         ),
         "alpha": alpha,
         "n": n,
