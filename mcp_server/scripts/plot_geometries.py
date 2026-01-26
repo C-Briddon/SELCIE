@@ -167,6 +167,12 @@ async def main():
             "geometry": "ellipse_in_vacuum",
             "params": {"rx": 0.2, "ry": 0.1, "domain_radius": 1.0},
         },
+        # Ellipse with measuring boundary
+        {
+            "geometry": "ellipse_in_vacuum",
+            "name": "ellipse_measuring_boundary",
+            "params": {"rx": 0.2, "ry": 0.1, "domain_radius": 1.0, "measuring_distance": 0.1},
+        },
         {
             "geometry": "shell_in_vacuum",
             "params": {"inner_radius": 0.1, "outer_radius": 0.2, "domain_radius": 1.0},

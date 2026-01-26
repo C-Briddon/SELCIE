@@ -135,6 +135,17 @@ def validate_geometry_params(geometry: str, params: dict) -> list[str]:
                     f"Ellipse semi-axes (rx={rx}, ry={ry}) must fit within "
                     f"domain_radius ({domain_radius})"
                 )
+        # Validate measuring_distance fits between ellipse and domain boundary
+        measuring_distance = params.get("measuring_distance")
+        if measuring_distance is not None:
+            check_positive("measuring_distance", measuring_distance)
+            if rx is not None and ry is not None and domain_radius is not None:
+                max_extent = max(rx, ry) + measuring_distance
+                if max_extent >= domain_radius:
+                    errors.append(
+                        f"Ellipse max extent + measuring_distance ({max_extent}) "
+                        f"must be less than domain_radius ({domain_radius})"
+                    )
 
     elif geometry == "cylinder_in_vacuum":
         object_height = params.get("object_height")
@@ -146,6 +157,7 @@ def validate_geometry_params(geometry: str, params: dict) -> list[str]:
                     f"Cylinder half-height ({half_height}) must be less than "
                     f"domain_radius ({domain_radius})"
                 )
+        # Note: measuring_distance is not supported for cylinder due to sharp corners
 
     elif geometry == "shell_in_vacuum":
         inner_radius = params.get("inner_radius")
@@ -208,6 +220,14 @@ def validate_geometry_params(geometry: str, params: dict) -> list[str]:
                     f"domain_height ({domain_height}) must be >= plate_separation "
                     f"({plate_separation})"
                 )
+
+    elif geometry in ("custom_2d_axial", "custom_2d_translation"):
+        # Validate measuring_distance if provided
+        measuring_distance = params.get("measuring_distance")
+        if measuring_distance is not None:
+            check_positive("measuring_distance", measuring_distance)
+            # Note: We can't validate against object extent here since points are
+            # provided dynamically. The creation function will handle this.
 
     return errors
 
@@ -385,7 +405,7 @@ TOOL_DEFINITION = Tool(
                     "step_file": {"type": "string", "description": "Path to STEP/IGES/BREP file (custom_step)"},
                     "plate_separation": {"type": "number", "description": "Gap between inner surfaces of plates (parallel_plates)"},
                     "plate_thickness": {"type": "number", "description": "Thickness of each plate (parallel_plates)"},
-                    "measuring_distance": {"type": "number", "description": "Distance from object surface to create measuring boundary shell. Creates 'measuring_boundary' region for evaluation of quantities (e.g field gradient) along the boundary). Recommended when you need to evaluate field gradient at a specific distance from the source, as the mesh resolution is increased at this boundary - use with evaluate mode='boundary_max'. Used by: sphere_in_vacuum."},
+                    "measuring_distance": {"type": "number", "description": "Distance from object surface to create measuring boundary shell. Creates 'measuring_boundary' region for evaluation of quantities (e.g field gradient) along the boundary). Recommended when you need to evaluate field gradient at a specific distance from the source, as the mesh resolution is increased at this boundary - use with evaluate mode='boundary_max'. Used by: sphere_in_vacuum, ellipse_in_vacuum, custom_2d_axial. Note: requires smooth boundaries (not sharp corners) and axisymmetric geometries."},
                 },
             },
             "mesh_quality": {
@@ -557,12 +577,13 @@ def _create_ellipse_in_vacuum(
     ry = params["ry"]
     domain_radius = params["domain_radius"]
     wall_thickness = params.get("wall_thickness")
+    measuring_distance = params.get("measuring_distance")
 
     # Create the ellipse using explicit points for smooth boundary
     n_boundary_points = 50
     points = _ellipse_points(rx, ry, n_boundary_points)
     points = MT.constrain_distance(points)
-    MT.points_to_surface(points)
+    source_surface = MT.points_to_surface(points)
 
     # Mark as subdomain with refinement
     # cell_min based on ellipse size to resolve boundary
@@ -572,6 +593,16 @@ def _create_ellipse_in_vacuum(
     cell_max = quality["cell_max_factor"] * domain_radius
     dist_max = quality["dist_max_factor"] * domain_radius
     MT.create_subdomain(CellSizeMin=cell_min, CellSizeMax=cell_max, DistMax=dist_max)
+
+    # Create measuring boundary shell if measuring_distance is specified
+    if measuring_distance is not None:
+        MT.construct_boundary(
+            initial_boundaries=[points],
+            d=measuring_distance,
+            embed=source_surface,
+            symmetry="vertical"
+        )
+        MT.create_subdomain(CellSizeMin=cell_min, CellSizeMax=cell_max, DistMax=dist_max)
 
     # Create background (vacuum)
     bg_cell_min = quality["cell_min_factor"] * domain_radius
@@ -586,7 +617,11 @@ def _create_ellipse_in_vacuum(
         symmetry="vertical",  # Axisymmetric
     )
 
-    regions = ["object", "vacuum"]
+    # Build regions list - order matters as markers are assigned sequentially
+    regions = ["object"]
+    if measuring_distance is not None:
+        regions.append("measuring_boundary")
+    regions.append("vacuum")
     if wall_thickness:
         regions.append("wall")
 
@@ -813,7 +848,12 @@ def _create_cylinder_in_vacuum(
     params: dict,
     quality: dict,
 ) -> tuple[list[str], dict]:
-    """Create cylinder in vacuum geometry (2D axisymmetric = rectangle)."""
+    """Create cylinder in vacuum geometry (2D axisymmetric = rectangle).
+
+    Note: measuring_distance is not supported for cylinder_in_vacuum because
+    the sharp 90-degree corners cause issues with the boundary offset algorithm.
+    Use sphere_in_vacuum or ellipse_in_vacuum for measuring boundary support.
+    """
     object_radius = params["object_radius"]
     object_height = params["object_height"]
     domain_radius = params["domain_radius"]
@@ -1148,6 +1188,7 @@ def _create_custom_2d(
 
     domain_radius = params.get("domain_radius", 1.0)
     wall_thickness = params.get("wall_thickness")
+    measuring_distance = params.get("measuring_distance")
     is_axisymmetric = symmetry == "axial"
 
     # Load points from file or use direct points
@@ -1175,7 +1216,7 @@ def _create_custom_2d(
         points_3d = points_2d.tolist()
 
     # Create shape from points
-    MT.points_to_surface(points_3d)
+    source_surface = MT.points_to_surface(points_3d)
 
     # Mark as subdomain with refinement
     # cell_min based on object size to resolve boundary
@@ -1185,6 +1226,17 @@ def _create_custom_2d(
     cell_max = quality["cell_max_factor"] * domain_radius
     dist_max = quality["dist_max_factor"] * domain_radius
     MT.create_subdomain(CellSizeMin=cell_min, CellSizeMax=cell_max, DistMax=dist_max)
+
+    # Create measuring boundary shell if measuring_distance is specified
+    # Note: measuring_distance only works for axisymmetric geometries
+    if measuring_distance is not None and is_axisymmetric:
+        MT.construct_boundary(
+            initial_boundaries=[points_3d],
+            d=measuring_distance,
+            embed=source_surface,
+            symmetry="vertical"
+        )
+        MT.create_subdomain(CellSizeMin=cell_min, CellSizeMax=cell_max, DistMax=dist_max)
 
     # Create background (vacuum) if domain_radius provided
     if domain_radius:
@@ -1206,7 +1258,11 @@ def _create_custom_2d(
     x_coords = points_2d[:, 0]
     y_coords = points_2d[:, 1]
 
-    regions = ["object", "vacuum"]
+    # Build regions list - order matters as markers are assigned sequentially
+    regions = ["object"]
+    if measuring_distance is not None and is_axisymmetric:
+        regions.append("measuring_boundary")
+    regions.append("vacuum")
     if wall_thickness:
         regions.append("wall")
 

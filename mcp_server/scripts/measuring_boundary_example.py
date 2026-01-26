@@ -1,24 +1,27 @@
 #!/usr/bin/env python3
 """
-End-to-end example: Sphere with measuring boundary for fifth force evaluation.
+End-to-end example: Custom shape with measuring boundary for fifth force evaluation.
 
-This script demonstrates the measuring_boundary feature:
-1. Create mesh with sphere_in_vacuum geometry and measuring_distance
+This script demonstrates the measuring_boundary feature using custom_2d_axial:
+1. Create mesh with custom_2d_axial geometry and measuring_distance
 2. Solve the chameleon field equation
 3. Evaluate the maximum gradient at the measuring boundary
 4. Compare with max_in_region mode for validation
 
+The custom shape is defined by explicit boundary points, allowing for
+arbitrary axisymmetric geometries (ellipses, capsules, complex shapes).
+
 Setup:
-- Sphere radius: 0.1337 (volume ≈ 0.01)
+- Custom ellipse-like shape (smooth boundary)
 - Vacuum chamber radius: 1.0
 - Wall thickness: 0.05
 - Measuring distance: 0.05 from object surface
-- α = 1e18, n = 1
+- alpha = 1e18, n = 1
 - Source density: 1e17
 - Vacuum density: 1.0
 
 Usage:
-    python sphere_measuring_boundary_example.py [--quality QUALITY]
+    python measuring_boundary_example.py [--quality QUALITY] [--shape SHAPE]
 """
 
 import sys
@@ -30,11 +33,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import argparse
 import asyncio
 import json
+import numpy as np
 
 from utils.session import reset_session
 
 # Physical parameters
-OBJECT_RADIUS = 0.1337  # Gives volume ≈ 0.01
 DOMAIN_RADIUS = 1.0
 WALL_THICKNESS = 0.05
 MEASURING_DISTANCE = 0.05
@@ -46,16 +49,127 @@ ALPHA = 1e18
 N = 1
 
 
+def generate_ellipse_points(rx: float, rz: float, n_points: int = 50) -> list:
+    """Generate points for an ellipse (half-plane for axisymmetric).
+
+    Args:
+        rx: Semi-axis in radial direction
+        rz: Semi-axis in z direction
+        n_points: Number of boundary points
+
+    Returns:
+        List of [r, z] points defining the boundary
+    """
+    theta = np.linspace(0, np.pi, n_points, endpoint=True)
+    r = rx * np.sin(theta)  # radial distance from axis
+    z = rz * np.cos(theta)  # height along axis
+    return [[float(ri), float(zi)] for ri, zi in zip(r, z)]
+
+
+def generate_capsule_points(radius: float, height: float, n_points: int = 50) -> list:
+    """Generate points for a capsule (cylinder with hemispherical caps).
+
+    Args:
+        radius: Radius of the cylinder and hemisphere caps
+        height: Height of the cylindrical section (total height = height + 2*radius)
+        n_points: Number of boundary points
+
+    Returns:
+        List of [r, z] points defining the boundary
+    """
+    points = []
+    half_h = height / 2
+
+    # Top hemisphere (from top to where it meets the cylinder)
+    n_cap = n_points // 3
+    theta = np.linspace(0, np.pi / 2, n_cap, endpoint=True)
+    for t in theta:
+        r = radius * np.sin(t)
+        z = half_h + radius * np.cos(t)
+        points.append([float(r), float(z)])
+
+    # Cylindrical section (right edge, excluding endpoints which are in hemispheres)
+    n_cyl = n_points // 3
+    for i in range(1, n_cyl - 1):  # Skip first and last to avoid duplicates
+        z = half_h - i / (n_cyl - 1) * height
+        points.append([float(radius), float(z)])
+
+    # Bottom hemisphere (from where it meets cylinder to bottom)
+    n_cap = n_points - len(points)
+    theta = np.linspace(np.pi / 2, np.pi, n_cap, endpoint=True)
+    for t in theta:
+        r = radius * np.sin(t)
+        z = -half_h + radius * np.cos(t)
+        points.append([float(r), float(z)])
+
+    return points
+
+
+def generate_teardrop_points(radius: float, length: float, n_points: int = 50) -> list:
+    """Generate points for a teardrop shape (sphere with pointed tail).
+
+    Args:
+        radius: Maximum radius of the teardrop
+        length: Total length from tip to base
+        n_points: Number of boundary points
+
+    Returns:
+        List of [r, z] points defining the boundary
+    """
+    points = []
+
+    # Parametric curve: smooth teardrop
+    t = np.linspace(0, np.pi, n_points, endpoint=True)
+
+    for ti in t:
+        # Teardrop parameterization
+        r = radius * np.sin(ti) * (1 - 0.3 * np.cos(ti))
+        z = length / 2 * np.cos(ti)
+        points.append([float(max(0, r)), float(z)])
+
+    return points
+
+
+SHAPES = {
+    "ellipse": {
+        "func": generate_ellipse_points,
+        "params": {"rx": 0.15, "rz": 0.1},
+        "description": "Ellipse (rx=0.15, rz=0.1)",
+    },
+    "capsule": {
+        "func": generate_capsule_points,
+        "params": {"radius": 0.08, "height": 0.15},
+        "description": "Capsule (r=0.08, h=0.15)",
+    },
+    "teardrop": {
+        "func": generate_teardrop_points,
+        "params": {"radius": 0.12, "length": 0.3},
+        "description": "Teardrop (r=0.12, L=0.3)",
+    },
+    "sphere": {
+        "func": generate_ellipse_points,
+        "params": {"rx": 0.1337, "rz": 0.1337},
+        "description": "Sphere (r=0.1337)",
+    },
+}
+
+
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Run SELCIE simulation with measuring boundary."
+        description="Run SELCIE simulation with measuring boundary using custom_2d_axial."
     )
     parser.add_argument(
         "--quality", "-q",
         choices=["very_coarse", "coarse", "medium", "fine", "very_fine"],
-        default="medium",
-        help="Mesh quality (default: medium)",
+        default="fine",
+        help="Mesh quality (default: fine)",
+    )
+    parser.add_argument(
+        "--shape", "-s",
+        choices=list(SHAPES.keys()),
+        default="ellipse",
+        help=f"Shape type (default: ellipse). Options: {', '.join(SHAPES.keys())}",
     )
     parser.add_argument(
         "--alpha", "-a",
@@ -94,34 +208,45 @@ async def main():
     output_dir = Path(__file__).parent.parent / "test_plots"
     output_dir.mkdir(exist_ok=True)
 
-    mesh_id = "sphere_measuring"
-    solution_id = "sphere_measuring_solution"
+    mesh_id = "custom_measuring"
+    solution_id = "custom_measuring_solution"
+
+    # Generate shape points
+    shape_config = SHAPES[args.shape]
+    points = shape_config["func"](n_points=50, **shape_config["params"])
+
+    # Calculate approximate object size for display
+    points_arr = np.array(points)
+    max_r = np.max(points_arr[:, 0])
+    max_z = np.max(np.abs(points_arr[:, 1]))
 
     print("=" * 70)
-    print("SELCIE MCP Tools: Sphere with Measuring Boundary Example")
+    print("SELCIE MCP Tools: Custom Shape with Measuring Boundary Example")
     print("=" * 70)
     print(f"\nSetup:")
-    print(f"  Object radius: {OBJECT_RADIUS} (volume ≈ {4/3 * 3.14159 * OBJECT_RADIUS**3:.4f})")
+    print(f"  Shape: {shape_config['description']}")
+    print(f"  Max radius (r): {max_r:.4f}")
+    print(f"  Max extent (z): {max_z:.4f}")
     print(f"  Domain radius: {DOMAIN_RADIUS}")
     print(f"  Wall thickness: {WALL_THICKNESS}")
     print(f"  Measuring distance: {args.measuring_distance}")
-    print(f"  α = {args.alpha:.0e}")
+    print(f"  alpha = {args.alpha:.0e}")
     print(f"  n = {N}")
     print(f"  Source density: {args.source_density:.0e}")
     print(f"  Vacuum density: {VACUUM_DENSITY:.0e}")
     print(f"  Wall density: {WALL_DENSITY:.0e}")
 
     # =========================================================================
-    # Step 1: Create mesh with measuring boundary
+    # Step 1: Create mesh with measuring boundary using custom_2d_axial
     # =========================================================================
     print("\n" + "-" * 70)
-    print("[1/4] Creating mesh with measuring boundary...")
+    print("[1/4] Creating mesh with measuring boundary (custom_2d_axial)...")
     print("-" * 70)
 
     mesh_result = await create_mesh({
-        "geometry": "sphere_in_vacuum",
+        "geometry": "custom_2d_axial",
         "params": {
-            "object_radius": OBJECT_RADIUS,
+            "points": points,
             "domain_radius": DOMAIN_RADIUS,
             "wall_thickness": WALL_THICKNESS,
             "measuring_distance": args.measuring_distance,
@@ -142,6 +267,7 @@ async def main():
         return
 
     print(f"  Mesh ID: {mesh_data['mesh_id']}")
+    print(f"  Geometry: {mesh_data['geometry']}")
     print(f"  Cells: {mesh_data['n_cells']:,}")
     print(f"  Vertices: {mesh_data['n_vertices']:,}")
     print(f"  Regions: {mesh_data['regions']}")
@@ -150,7 +276,7 @@ async def main():
     if "physics_refinement" in mesh_data:
         pr = mesh_data["physics_refinement"]
         print(f"  Physics refinement:")
-        print(f"    λ_min = {pr.get('lambda_min', 'N/A'):.3e}")
+        print(f"    lambda_min = {pr.get('lambda_min', 'N/A'):.3e}")
         print(f"    cell_min_limited: {pr.get('cell_min_limited', False)}")
 
     # Verify measuring_boundary region exists
@@ -158,7 +284,7 @@ async def main():
         print("ERROR: measuring_boundary region not found in mesh!")
         return
 
-    print(f"\n  ✓ measuring_boundary region created (marker {mesh_data['regions']['measuring_boundary']})")
+    print(f"\n  measuring_boundary region created (marker {mesh_data['regions']['measuring_boundary']})")
 
     # =========================================================================
     # Step 2: Solve chameleon field equation
@@ -207,7 +333,7 @@ async def main():
     print("[3/4] Evaluating gradient at measuring boundary...")
     print("-" * 70)
 
-    # Method 1: boundary_max mode (new feature)
+    # Method 1: boundary_max mode
     print("\n  Method 1: boundary_max mode on measuring_boundary")
     boundary_max_result = await evaluate({
         "solution_id": solution_id,
@@ -256,8 +382,8 @@ async def main():
 
     # Method 3: Radial profile through the measuring boundary
     print("\n  Method 3: Radial profile through measuring boundary")
-    r_inner = OBJECT_RADIUS
-    r_outer = OBJECT_RADIUS + args.measuring_distance + 0.1
+    r_inner = max_r * 0.5
+    r_outer = max_r + args.measuring_distance + 0.1
     radial_result = await evaluate({
         "solution_id": solution_id,
         "mode": "radial",
@@ -276,7 +402,6 @@ async def main():
     if "error" in radial_data:
         print(f"    ERROR: {radial_data['error']}")
     else:
-        import numpy as np
         r_values = np.array(radial_data["data"]["r"])
         grad_values = np.array(radial_data["data"]["gradient_magnitude"])
 
@@ -284,7 +409,7 @@ async def main():
         max_idx = np.argmax(grad_values)
         print(f"    Max gradient in radial profile: {grad_values[max_idx]:.6e}")
         print(f"    At radius: {r_values[max_idx]:.4f}")
-        print(f"    (Expected measuring boundary at r ≈ {OBJECT_RADIUS + args.measuring_distance:.4f})")
+        print(f"    (Expected measuring boundary at r ~ {max_r + args.measuring_distance:.4f})")
 
     # =========================================================================
     # Step 4: Generate plots
@@ -294,52 +419,52 @@ async def main():
     print("-" * 70)
 
     # Field 1D profile
-    field_1d_path = output_dir / "sphere_measuring_field_1d.png"
+    field_1d_path = output_dir / f"{args.shape}_measuring_field_1d.png"
     await plot({
         "solution_id": solution_id,
         "plot_type": "field_1d",
         "output_path": str(field_1d_path),
         "options": {
-            "title": "Sphere with Measuring Boundary: Field Profile",
+            "title": f"{args.shape.title()} with Measuring Boundary: Field Profile",
             "n_points": 200,
         },
     })
     print(f"  Field 1D saved to: {field_1d_path}")
 
     # Gradient 1D profile
-    grad_1d_path = output_dir / "sphere_measuring_gradient_1d.png"
+    grad_1d_path = output_dir / f"{args.shape}_measuring_gradient_1d.png"
     await plot({
         "solution_id": solution_id,
         "plot_type": "gradient_1d",
         "output_path": str(grad_1d_path),
         "options": {
-            "title": "Sphere with Measuring Boundary: Gradient Profile",
+            "title": f"{args.shape.title()} with Measuring Boundary: Gradient Profile",
             "n_points": 200,
         },
     })
     print(f"  Gradient 1D saved to: {grad_1d_path}")
 
     # Field 2D
-    field_2d_path = output_dir / "sphere_measuring_field_2d.png"
+    field_2d_path = output_dir / f"{args.shape}_measuring_field_2d.png"
     await plot({
         "solution_id": solution_id,
         "plot_type": "field_2d",
         "output_path": str(field_2d_path),
         "options": {
-            "title": "Sphere with Measuring Boundary: Field (2D)",
+            "title": f"{args.shape.title()} with Measuring Boundary: Field (2D)",
             "n_grid": 150,
         },
     })
     print(f"  Field 2D saved to: {field_2d_path}")
 
     # Gradient 2D
-    grad_2d_path = output_dir / "sphere_measuring_gradient_2d.png"
+    grad_2d_path = output_dir / f"{args.shape}_measuring_gradient_2d.png"
     await plot({
         "solution_id": solution_id,
         "plot_type": "gradient_2d",
         "output_path": str(grad_2d_path),
         "options": {
-            "title": "Sphere with Measuring Boundary: |∇φ| (2D)",
+            "title": f"{args.shape.title()} with Measuring Boundary: |grad phi| (2D)",
             "n_grid": 150,
         },
     })
@@ -355,15 +480,12 @@ async def main():
     if "error" not in boundary_max_data:
         data = boundary_max_data["data"]
         print(f"\nMaximum gradient at measuring boundary:")
-        print(f"  |∇φ|_max = {data['max_gradient']:.6e}")
+        print(f"  |grad phi|_max = {data['max_gradient']:.6e}")
         print(f"  Position: r = {data['max_position'][0]:.4f}, z = {data['max_position'][1]:.4f}")
 
-        # Calculate expected radius
+        # Calculate distance from axis
         r_measured = (data['max_position'][0]**2 + data['max_position'][1]**2)**0.5
-        r_expected = OBJECT_RADIUS + args.measuring_distance
-        print(f"\n  Measured radius: {r_measured:.4f}")
-        print(f"  Expected radius: {r_expected:.4f}")
-        print(f"  Difference: {abs(r_measured - r_expected):.4f}")
+        print(f"\n  Distance from origin: {r_measured:.4f}")
 
     print(f"\nOutput files saved to: {output_dir}")
 

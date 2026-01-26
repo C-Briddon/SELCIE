@@ -1074,7 +1074,7 @@ class TestFixedSymmetry:
 
 
 class TestMeasuringDistance:
-    """Test measuring_distance parameter for sphere_in_vacuum."""
+    """Test measuring_distance parameter for supported geometries."""
 
     @pytest.fixture(autouse=True)
     def reset(self):
@@ -1100,6 +1100,53 @@ class TestMeasuringDistance:
         assert "error" not in data
         assert "measuring_boundary" in data["regions"]
         # Check marker ordering: object=0, measuring_boundary=1, vacuum=2
+        assert data["regions"]["object"] == 0
+        assert data["regions"]["measuring_boundary"] == 1
+        assert data["regions"]["vacuum"] == 2
+
+    @pytest.mark.asyncio
+    async def test_ellipse_measuring_distance(self):
+        """measuring_distance works with ellipse_in_vacuum."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "ellipse_in_vacuum",
+            "params": {
+                "rx": 0.2,
+                "ry": 0.1,
+                "domain_radius": 1.0,
+                "measuring_distance": 0.05,
+            },
+            "mesh_quality": "coarse",
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" not in data
+        assert "measuring_boundary" in data["regions"]
+        assert data["regions"]["object"] == 0
+        assert data["regions"]["measuring_boundary"] == 1
+        assert data["regions"]["vacuum"] == 2
+
+    @pytest.mark.asyncio
+    async def test_custom_2d_axial_measuring_distance(self):
+        """measuring_distance works with custom_2d_axial."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "custom_2d_axial",
+            "params": {
+                "points": [
+                    [0.0, 0.2], [0.173, 0.1], [0.173, -0.1], [0.0, -0.2],
+                ],
+                "domain_radius": 1.0,
+                "measuring_distance": 0.05,
+            },
+            "mesh_quality": "coarse",
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" not in data
+        assert "measuring_boundary" in data["regions"]
         assert data["regions"]["object"] == 0
         assert data["regions"]["measuring_boundary"] == 1
         assert data["regions"]["vacuum"] == 2

@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-01-26 22:46_
+_Generated: 2026-01-26 23:28_
 
 ---
 
@@ -127,7 +127,7 @@ CUSTOM SHAPES:
 - **`step_file`** (string): Path to STEP/IGES/BREP file (custom_step)
 - **`plate_separation`** (number): Gap between inner surfaces of plates (parallel_plates)
 - **`plate_thickness`** (number): Thickness of each plate (parallel_plates)
-- **`measuring_distance`** (number): Distance from object surface to create measuring boundary shell. Creates 'measuring_boundary' region for evaluation of quantities (e.g field gradient) along the boundary). Recommended when you need to evaluate field gradient at a specific distance from the source, as the mesh resolution is increased at this boundary - use with evaluate mode='boundary_max'. Used by: sphere_in_vacuum.
+- **`measuring_distance`** (number): Distance from object surface to create measuring boundary shell. Creates 'measuring_boundary' region for evaluation of quantities (e.g field gradient) along the boundary). Recommended when you need to evaluate field gradient at a specific distance from the source, as the mesh resolution is increased at this boundary - use with evaluate mode='boundary_max'. Used by: sphere_in_vacuum, ellipse_in_vacuum, custom_2d_axial. Note: requires smooth boundaries (not sharp corners) and axisymmetric geometries.
 
 #### `physics_params` options
 
