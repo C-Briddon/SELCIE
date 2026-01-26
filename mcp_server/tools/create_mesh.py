@@ -115,6 +115,16 @@ def validate_geometry_params(geometry: str, params: dict) -> list[str]:
     # Geometry-specific validation
     if geometry == "sphere_in_vacuum":
         check_less_than("object_radius", object_radius, "domain_radius", domain_radius)
+        # Validate measuring_distance fits between object and domain boundary
+        measuring_distance = params.get("measuring_distance")
+        if measuring_distance is not None:
+            check_positive("measuring_distance", measuring_distance)
+            if object_radius is not None and domain_radius is not None:
+                if object_radius + measuring_distance >= domain_radius:
+                    errors.append(
+                        f"object_radius + measuring_distance ({object_radius + measuring_distance}) "
+                        f"must be less than domain_radius ({domain_radius})"
+                    )
 
     elif geometry == "ellipse_in_vacuum":
         rx, ry = params.get("rx"), params.get("ry")
@@ -375,6 +385,7 @@ TOOL_DEFINITION = Tool(
                     "step_file": {"type": "string", "description": "Path to STEP/IGES/BREP file (custom_step)"},
                     "plate_separation": {"type": "number", "description": "Gap between inner surfaces of plates (parallel_plates)"},
                     "plate_thickness": {"type": "number", "description": "Thickness of each plate (parallel_plates)"},
+                    "measuring_distance": {"type": "number", "description": "Distance from object surface to create measuring boundary shell. Creates 'measuring_boundary' region for evaluation of quantities (e.g field gradient) along the boundary). Recommended when you need to evaluate field gradient at a specific distance from the source, as the mesh resolution is increased at this boundary - use with evaluate mode='boundary_max'. Used by: sphere_in_vacuum."},
                 },
             },
             "mesh_quality": {
@@ -474,13 +485,14 @@ def _create_sphere_in_vacuum(
     object_radius = params["object_radius"]
     domain_radius = params["domain_radius"]
     wall_thickness = params.get("wall_thickness")
+    measuring_distance = params.get("measuring_distance")
 
     # Create the sphere using explicit points for smooth boundary
     # (using create_ellipse results in jagged boundaries due to GMSH arc discretization)
     n_boundary_points = 50  # Matches Sphere_Standalone.py
     points = _sphere_points(object_radius, n_boundary_points)
     points = MT.constrain_distance(points)
-    MT.points_to_surface(points)
+    source_surface = MT.points_to_surface(points)
 
     # Mark as subdomain with refinement
     # cell_min based on object size to resolve boundary
@@ -489,6 +501,18 @@ def _create_sphere_in_vacuum(
     cell_max = quality["cell_max_factor"] * domain_radius
     dist_max = quality["dist_max_factor"] * domain_radius
     MT.create_subdomain(CellSizeMin=cell_min, CellSizeMax=cell_max, DistMax=dist_max)
+
+    # Create measuring boundary shell if measuring_distance is specified
+    if measuring_distance is not None:
+        # Construct a thin shell at measuring_distance from the object surface
+        MT.construct_boundary(
+            initial_boundaries=[points],
+            d=measuring_distance,
+            embed=source_surface,
+            symmetry="vertical"
+        )
+        # Mark measuring boundary as subdomain (refinement inherits from previous settings)
+        MT.create_subdomain(CellSizeMin=cell_min, CellSizeMax=cell_max, DistMax=dist_max)
 
     # Create background (vacuum)
     bg_cell_min = quality["cell_min_factor"] * domain_radius
@@ -504,7 +528,11 @@ def _create_sphere_in_vacuum(
         symmetry="vertical",  # Axisymmetric - only mesh r >= 0
     )
 
-    regions = ["object", "vacuum"]
+    # Build regions list - order matters as markers are assigned sequentially (0, 1, 2, ...)
+    regions = ["object"]
+    if measuring_distance is not None:
+        regions.append("measuring_boundary")
+    regions.append("vacuum")
     if wall_thickness:
         regions.append("wall")
 

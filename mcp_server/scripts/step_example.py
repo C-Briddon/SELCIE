@@ -114,7 +114,7 @@ async def main():
         print(f"ERROR: STEP file not found: {step_file}")
         sys.exit(1)
 
-    output_dir = Path(__file__).parent.parent / "step_plots"
+    output_dir = Path(__file__).parent.parent / "test_plots"
     output_dir.mkdir(exist_ok=True)
 
     # Derive IDs and output names from filename

@@ -1071,3 +1071,99 @@ class TestFixedSymmetry:
         data = json.loads(result[0].text)
         assert "error" not in data
         assert data["symmetry"] == "translation"
+
+
+class TestMeasuringDistance:
+    """Test measuring_distance parameter for sphere_in_vacuum."""
+
+    @pytest.fixture(autouse=True)
+    def reset(self):
+        """Reset session before each test."""
+        reset_session()
+
+    @pytest.mark.asyncio
+    async def test_measuring_distance_creates_region(self):
+        """measuring_distance creates measuring_boundary region."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "sphere_in_vacuum",
+            "params": {
+                "object_radius": 0.1,
+                "domain_radius": 1.0,
+                "measuring_distance": 0.05,
+            },
+            "mesh_quality": "coarse",
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" not in data
+        assert "measuring_boundary" in data["regions"]
+        # Check marker ordering: object=0, measuring_boundary=1, vacuum=2
+        assert data["regions"]["object"] == 0
+        assert data["regions"]["measuring_boundary"] == 1
+        assert data["regions"]["vacuum"] == 2
+
+    @pytest.mark.asyncio
+    async def test_measuring_distance_with_wall(self):
+        """measuring_distance works with wall_thickness."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "sphere_in_vacuum",
+            "params": {
+                "object_radius": 0.1,
+                "domain_radius": 1.0,
+                "measuring_distance": 0.05,
+                "wall_thickness": 0.1,
+            },
+            "mesh_quality": "coarse",
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" not in data
+        assert "measuring_boundary" in data["regions"]
+        assert "wall" in data["regions"]
+        # Check marker ordering: object=0, measuring_boundary=1, vacuum=2, wall=3
+        assert data["regions"]["object"] == 0
+        assert data["regions"]["measuring_boundary"] == 1
+        assert data["regions"]["vacuum"] == 2
+        assert data["regions"]["wall"] == 3
+
+    @pytest.mark.asyncio
+    async def test_measuring_distance_validation_too_large(self):
+        """measuring_distance + object_radius >= domain_radius should be rejected."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "sphere_in_vacuum",
+            "params": {
+                "object_radius": 0.5,
+                "domain_radius": 1.0,
+                "measuring_distance": 0.6,  # 0.5 + 0.6 = 1.1 > 1.0
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "INVALID_PARAMS"
+        assert "measuring_distance" in str(data["error"]["details"])
+
+    @pytest.mark.asyncio
+    async def test_measuring_distance_validation_negative(self):
+        """Negative measuring_distance should be rejected."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "sphere_in_vacuum",
+            "params": {
+                "object_radius": 0.1,
+                "domain_radius": 1.0,
+                "measuring_distance": -0.05,  # Invalid
+            },
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert data["error"]["code"] == "INVALID_PARAMS"
+        assert "measuring_distance must be positive" in str(data["error"]["details"])

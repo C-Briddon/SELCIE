@@ -157,6 +157,12 @@ async def main():
             "geometry": "sphere_in_vacuum",
             "params": {"object_radius": 0.15, "domain_radius": 1.0},
         },
+        # Sphere with measuring boundary (for fifth force evaluation at fixed distance)
+        {
+            "geometry": "sphere_in_vacuum",
+            "name": "sphere_measuring_boundary",
+            "params": {"object_radius": 0.15, "domain_radius": 1.0, "measuring_distance": 0.1},
+        },
         {
             "geometry": "ellipse_in_vacuum",
             "params": {"rx": 0.2, "ry": 0.1, "domain_radius": 1.0},

@@ -22,6 +22,7 @@ Modes:
 - grid: Sample on regular 2D grid
 - max_in_region: Find max/min values within a region, with optional minimum distance from other region(s). Use min_distance_from='all' to exclude points near any other domain boundary.
 - integrate: Compute volume integrals over a region. Returns total force, mass, volume. Essential for torsion balance experiments, Casimir force measurements, and any extended object where thin-shell effects matter.
+- boundary_max: Find max gradient magnitude along a region boundary (e.g., measuring_boundary). Useful for finding peak fifth force at a specific distance from source.
 
 Quantities (for point-based modes):
 - field: Chameleon field φ
@@ -47,7 +48,7 @@ Note: For screened objects, force/torque contributions come from a thin shell of
             },
             "mode": {
                 "type": "string",
-                "enum": ["radial", "line", "points", "grid", "max_in_region", "integrate"],
+                "enum": ["radial", "line", "points", "grid", "max_in_region", "integrate", "boundary_max"],
                 "description": "Evaluation mode"
             },
             "params": {
@@ -86,7 +87,9 @@ Note: For screened objects, force/torque contributions come from a thin shell of
                         "description": "Region(s) to keep distance from (max_in_region). Can be: a region name, 'all' for all other regions, or a list of region names"
                     },
                     "min_distance": {"type": "number", "description": "Minimum distance from boundary of exclusion region(s) (max_in_region)"},
-                    "n_samples": {"type": "integer", "description": "Number of random samples (max_in_region). Default: 1000"}
+                    "n_samples": {"type": "integer", "description": "Number of random samples (max_in_region). Default: 1000"},
+                    "boundary": {"type": "string", "enum": ["outer", "inner", "all"], "description": "Which boundary to evaluate for shell regions (boundary_max). 'outer' = adjacent to vacuum, 'inner' = adjacent to object. Default: outer"},
+                    "adjacent_to": {"type": "string", "description": "Explicit region name that the boundary should be adjacent to (boundary_max). Overrides 'boundary' parameter. Use for non-spherical geometries or custom region names."}
                 }
             },
             "quantities": {
@@ -365,6 +368,10 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent]:
             )
         elif mode == "integrate":
             return await _handle_integrate(
+                arguments, mesh, field, mesh_info, solution_info
+            )
+        elif mode == "boundary_max":
+            return await _handle_boundary_max(
                 arguments, mesh, field, mesh_info, solution_info
             )
         else:
@@ -965,5 +972,232 @@ async def _handle_integrate(
     # Add note about units for translation symmetry
     if symmetry == "translation":
         result["scaling"]["symmetry_note"] = "For translation symmetry, values are per unit length in z."
+
+    return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+
+async def _handle_boundary_max(
+    arguments: dict[str, Any],
+    mesh,
+    field,
+    mesh_info,
+    solution_info,
+) -> list[TextContent]:
+    """Handle boundary_max mode - find max gradient magnitude along region boundary.
+
+    This mode extracts the boundary of a specified region (e.g., measuring_boundary)
+    and evaluates the gradient magnitude at each boundary vertex to find the maximum.
+    Useful for finding peak fifth force at a specific distance from source.
+
+    For shell-like regions (e.g., measuring_boundary), use the 'boundary' parameter
+    to select which boundary based on the adjacent region:
+    - 'outer': boundary adjacent to vacuum (default for measuring_boundary)
+    - 'inner': boundary adjacent to object
+    - 'all': all boundaries
+
+    The adjacent_to parameter can override automatic detection by specifying
+    which region the desired boundary should be adjacent to.
+    """
+    import dolfin as d
+
+    params = arguments.get("params", {})
+    region = params.get("region", "measuring_boundary")
+    boundary_select = params.get("boundary", "outer")  # "outer", "inner", or "all"
+    adjacent_to = params.get("adjacent_to")  # Optional: explicit region name
+
+    # Get region marker
+    regions = mesh_info.regions
+    if region not in regions:
+        return [TextContent(type="text", text=json.dumps({
+            "error": {
+                "code": "INVALID_REGION",
+                "message": f"Region '{region}' not found. Available: {list(regions.keys())}"
+            }
+        }, indent=2))]
+
+    target_marker = regions[region]
+
+    # Validate adjacent_to if provided
+    if adjacent_to is not None and adjacent_to not in regions:
+        return [TextContent(type="text", text=json.dumps({
+            "error": {
+                "code": "INVALID_REGION",
+                "message": f"adjacent_to region '{adjacent_to}' not found. Available: {list(regions.keys())}"
+            }
+        }, indent=2))]
+
+    # Load subdomain markers
+    mesh_path = mesh_info.mesh_path
+    subdomains_file = os.path.join(mesh_path, "mesh.xdmf")
+
+    mvc = d.MeshValueCollection("size_t", mesh, mesh.topology().dim())
+    with d.XDMFFile(subdomains_file) as f:
+        f.read(mvc, "Subdomain")
+    subdomains = d.MeshFunction("size_t", mesh, mvc)
+
+    mesh_dim = mesh.geometry().dim()
+
+    # Determine which region to use for boundary filtering
+    # Default: "outer" -> vacuum, "inner" -> object (for measuring_boundary)
+    filter_adjacent_marker = None
+    if boundary_select != "all":
+        if adjacent_to is not None:
+            # User explicitly specified which region
+            filter_adjacent_marker = regions[adjacent_to]
+        else:
+            # Auto-detect based on boundary_select
+            if boundary_select == "outer":
+                # Outer boundary is adjacent to vacuum
+                if "vacuum" in regions:
+                    filter_adjacent_marker = regions["vacuum"]
+            elif boundary_select == "inner":
+                # Inner boundary is adjacent to object
+                if "object" in regions:
+                    filter_adjacent_marker = regions["object"]
+
+    # Collect vertices on the target region's boundary that are adjacent to the filter region
+    # We do this by finding facets shared between target region and filter region
+    target_boundary_vertices = set()
+
+    if filter_adjacent_marker is not None:
+        # Find boundary vertices by looking at facets between regions
+        # A facet is on the boundary between two regions if its two adjacent cells
+        # have different subdomain markers
+
+        # Build facet-to-cell connectivity
+        mesh.init(mesh_dim - 1, mesh_dim)  # Initialize facet-to-cell connectivity
+
+        for facet in d.facets(mesh):
+            adjacent_cells = list(d.cells(facet))
+            if len(adjacent_cells) == 2:
+                marker0 = subdomains[adjacent_cells[0]]
+                marker1 = subdomains[adjacent_cells[1]]
+
+                # Check if this facet is between target region and filter region
+                if (marker0 == target_marker and marker1 == filter_adjacent_marker) or \
+                   (marker1 == target_marker and marker0 == filter_adjacent_marker):
+                    # Add all vertices of this facet
+                    for vertex in d.vertices(facet):
+                        target_boundary_vertices.add(vertex.index())
+
+        if len(target_boundary_vertices) == 0:
+            # Fallback: no shared boundary found, use all boundary vertices
+            # This can happen if the regions don't actually touch
+            filter_adjacent_marker = None
+
+    # If no filtering or fallback, get all boundary vertices of target region
+    if filter_adjacent_marker is None:
+        # Create submesh and extract boundary
+        submesh = d.SubMesh(mesh, subdomains, target_marker)
+
+        if submesh.num_cells() == 0:
+            return [TextContent(type="text", text=json.dumps({
+                "error": {
+                    "code": "EMPTY_REGION",
+                    "message": f"No cells found in region '{region}'"
+                }
+            }, indent=2))]
+
+        boundary_mesh = d.BoundaryMesh(submesh, "exterior")
+
+        if boundary_mesh.num_vertices() == 0:
+            return [TextContent(type="text", text=json.dumps({
+                "error": {
+                    "code": "NO_BOUNDARY",
+                    "message": f"No boundary vertices found for region '{region}'"
+                }
+            }, indent=2))]
+
+        # Get coordinates from boundary mesh
+        boundary_coords = boundary_mesh.coordinates()
+
+        # Filter for r > 0 (avoid axis singularity)
+        r_min_filter = 1e-10
+        valid_coords_list = []
+        for coord in boundary_coords:
+            if coord[0] >= r_min_filter:
+                valid_coords_list.append(coord[:mesh_dim].tolist())
+
+    else:
+        # Use the vertices we found on the shared boundary
+        all_coords = mesh.coordinates()
+        r_min_filter = 1e-10
+        valid_coords_list = []
+
+        for vertex_idx in target_boundary_vertices:
+            coord = all_coords[vertex_idx]
+            if coord[0] >= r_min_filter:
+                valid_coords_list.append(coord[:mesh_dim].tolist())
+
+    if len(valid_coords_list) == 0:
+        return [TextContent(type="text", text=json.dumps({
+            "error": {
+                "code": "NO_VALID_POINTS",
+                "message": f"No valid boundary points found (all have r < {r_min_filter} or no shared boundary)"
+            }
+        }, indent=2))]
+
+    # Build bounding box tree for efficient point location
+    tree = mesh.bounding_box_tree()
+
+    # Evaluate gradient at each valid boundary vertex
+    gradient_values = []
+    valid_coords = []
+
+    for pt in valid_coords_list:
+        grad_vec = _evaluate_gradient_locally(field, pt, mesh, tree)
+        grad_mag = np.linalg.norm(grad_vec)
+        if not np.isnan(grad_mag):
+            gradient_values.append(grad_mag)
+            valid_coords.append(pt)
+
+    if len(gradient_values) == 0:
+        return [TextContent(type="text", text=json.dumps({
+            "error": {
+                "code": "EVALUATION_FAILED",
+                "message": "Could not evaluate gradient at any boundary point (all outside mesh or NaN)"
+            }
+        }, indent=2))]
+
+    gradient_values = np.array(gradient_values)
+    valid_coords = np.array(valid_coords)
+
+    # Calculate spherical radii for reference
+    if mesh_dim == 2:
+        spherical_radii = np.sqrt(valid_coords[:, 0]**2 + valid_coords[:, 1]**2)
+    else:
+        spherical_radii = np.sqrt(valid_coords[:, 0]**2 + valid_coords[:, 1]**2 + valid_coords[:, 2]**2)
+
+    # Find max gradient
+    max_idx = np.argmax(gradient_values)
+    max_gradient = float(gradient_values[max_idx])
+    max_position = valid_coords[max_idx].tolist()
+
+    # Compute statistics
+    mean_gradient = float(np.mean(gradient_values))
+    min_gradient = float(np.min(gradient_values))
+    min_idx = np.argmin(gradient_values)
+    min_position = valid_coords[min_idx].tolist()
+
+    result = {
+        "solution_id": arguments["solution_id"],
+        "mode": "boundary_max",
+        "region": region,
+        "boundary": boundary_select,
+        "data": {
+            "max_gradient": max_gradient,
+            "max_position": max_position,
+            "min_gradient": min_gradient,
+            "min_position": min_position,
+            "mean_gradient": mean_gradient,
+            "n_points": len(gradient_values),
+            "radius_range": [float(spherical_radii.min()), float(spherical_radii.max())],
+        }
+    }
+
+    # Add info about which region the boundary is adjacent to
+    if filter_adjacent_marker is not None:
+        adjacent_region_name = [k for k, v in regions.items() if v == filter_adjacent_marker][0]
+        result["adjacent_to"] = adjacent_region_name
 
     return [TextContent(type="text", text=json.dumps(result, indent=2))]

@@ -881,3 +881,209 @@ class TestEvaluateHelpers:
         assert len(points) == 6  # 3 * 2
         assert np.allclose(r, [0, 0.5, 1])
         assert np.allclose(z, [0, 2])
+
+
+class TestBoundaryMax:
+    """Test boundary_max mode for measuring boundary evaluation."""
+
+    @pytest.fixture(autouse=True)
+    def reset(self):
+        """Reset session before each test."""
+        reset_session()
+
+    @pytest_asyncio.fixture
+    async def solution_with_measuring_boundary(self):
+        """Create mesh with measuring_boundary and solve."""
+        from tools.create_mesh import handle as create_mesh
+        from tools.solve import handle as solve
+
+        # Create sphere with measuring_distance
+        mesh_result = await create_mesh({
+            "geometry": "sphere_in_vacuum",
+            "params": {
+                "object_radius": 0.1,
+                "domain_radius": 1.0,
+                "measuring_distance": 0.05,
+            },
+            "mesh_quality": "coarse",
+        })
+        mesh_data = json.loads(mesh_result[0].text)
+
+        if "error" in mesh_data:
+            pytest.skip(f"Could not create mesh: {mesh_data['error']}")
+
+        mesh_id = mesh_data["mesh_id"]
+
+        # Solve - vacuum density auto-assigned to measuring_boundary
+        solve_result = await solve({
+            "mesh_id": mesh_id,
+            "alpha": 1e-6,
+            "density": {
+                "object": 1e6,
+                "vacuum": 1e-10,
+            },
+        })
+        solve_data = json.loads(solve_result[0].text)
+
+        if "error" in solve_data and solve_data.get("status") == "failed":
+            pytest.skip(f"Solve failed: {solve_data}")
+
+        return solve_data["solution_id"]
+
+    @pytest.mark.asyncio
+    async def test_boundary_max_basic(self, solution_with_measuring_boundary):
+        """Test boundary_max mode returns expected structure."""
+        from tools.evaluate import handle
+
+        result = await handle({
+            "solution_id": solution_with_measuring_boundary,
+            "mode": "boundary_max",
+            "params": {
+                "region": "measuring_boundary",
+            },
+        })
+
+        data = json.loads(result[0].text)
+
+        assert "error" not in data
+        assert data["mode"] == "boundary_max"
+        assert data["region"] == "measuring_boundary"
+        assert data["boundary"] == "outer"  # Default is outer
+
+        # Check data structure
+        assert "max_gradient" in data["data"]
+        assert "max_position" in data["data"]
+        assert "mean_gradient" in data["data"]
+        assert "n_points" in data["data"]
+        assert "radius_range" in data["data"]
+
+        # Values should be positive
+        assert data["data"]["max_gradient"] > 0
+        assert data["data"]["mean_gradient"] > 0
+        assert data["data"]["n_points"] > 0
+
+        # Position should be a list of coordinates
+        assert isinstance(data["data"]["max_position"], list)
+        assert len(data["data"]["max_position"]) == 2  # 2D mesh
+
+        # Radius range should be near the outer boundary (object_radius + measuring_distance)
+        # object_radius=0.1, measuring_distance=0.05, so outer boundary at ~0.15
+        radius_range = data["data"]["radius_range"]
+        assert radius_range[0] > 0.14  # Should be on outer boundary, not inner
+        assert radius_range[1] < 0.20  # But not too far out
+
+    @pytest.mark.asyncio
+    async def test_boundary_max_invalid_region(self, solution_with_measuring_boundary):
+        """Test boundary_max with invalid region returns error."""
+        from tools.evaluate import handle
+
+        result = await handle({
+            "solution_id": solution_with_measuring_boundary,
+            "mode": "boundary_max",
+            "params": {
+                "region": "nonexistent",
+            },
+        })
+
+        data = json.loads(result[0].text)
+
+        assert "error" in data
+        assert data["error"]["code"] == "INVALID_REGION"
+
+    @pytest.mark.asyncio
+    async def test_boundary_max_default_region(self, solution_with_measuring_boundary):
+        """Test boundary_max defaults to measuring_boundary region."""
+        from tools.evaluate import handle
+
+        result = await handle({
+            "solution_id": solution_with_measuring_boundary,
+            "mode": "boundary_max",
+            "params": {},  # No region specified
+        })
+
+        data = json.loads(result[0].text)
+
+        assert "error" not in data
+        assert data["region"] == "measuring_boundary"
+
+
+class TestMeasuringBoundaryAutoAssign:
+    """Test that measuring_boundary density is auto-assigned from vacuum."""
+
+    @pytest.fixture(autouse=True)
+    def reset(self):
+        """Reset session before each test."""
+        reset_session()
+
+    @pytest.mark.asyncio
+    async def test_solve_without_measuring_boundary_density(self):
+        """Solve should succeed without explicit measuring_boundary density."""
+        from tools.create_mesh import handle as create_mesh
+        from tools.solve import handle as solve
+
+        # Create mesh with measuring_distance
+        mesh_result = await create_mesh({
+            "geometry": "sphere_in_vacuum",
+            "params": {
+                "object_radius": 0.1,
+                "domain_radius": 1.0,
+                "measuring_distance": 0.05,
+            },
+            "mesh_quality": "coarse",
+        })
+        mesh_data = json.loads(mesh_result[0].text)
+        assert "error" not in mesh_data
+        assert "measuring_boundary" in mesh_data["regions"]
+
+        mesh_id = mesh_data["mesh_id"]
+
+        # Solve without specifying measuring_boundary density
+        solve_result = await solve({
+            "mesh_id": mesh_id,
+            "alpha": 1e-6,
+            "density": {
+                "object": 1e6,
+                "vacuum": 1e-10,
+                # No measuring_boundary - should be auto-assigned
+            },
+        })
+        solve_data = json.loads(solve_result[0].text)
+
+        # Should succeed without error about missing density
+        assert solve_data.get("status") != "failed"
+        assert "error" not in solve_data or "No density specified" not in str(solve_data.get("error", ""))
+        assert solve_data.get("status") in ["converged", "max_iterations_not_converged"]
+
+    @pytest.mark.asyncio
+    async def test_solve_with_explicit_measuring_boundary_density(self):
+        """Solve should use explicit measuring_boundary density if provided."""
+        from tools.create_mesh import handle as create_mesh
+        from tools.solve import handle as solve
+
+        # Create mesh with measuring_distance
+        mesh_result = await create_mesh({
+            "geometry": "sphere_in_vacuum",
+            "params": {
+                "object_radius": 0.1,
+                "domain_radius": 1.0,
+                "measuring_distance": 0.05,
+            },
+            "mesh_quality": "coarse",
+        })
+        mesh_data = json.loads(mesh_result[0].text)
+        mesh_id = mesh_data["mesh_id"]
+
+        # Solve with explicit measuring_boundary density (different from vacuum)
+        solve_result = await solve({
+            "mesh_id": mesh_id,
+            "alpha": 1e-6,
+            "density": {
+                "object": 1e6,
+                "vacuum": 1e-10,
+                "measuring_boundary": 1.0,  # Explicit, different from vacuum
+            },
+        })
+        solve_data = json.loads(solve_result[0].text)
+
+        # Should succeed
+        assert solve_data.get("status") in ["converged", "max_iterations_not_converged"]

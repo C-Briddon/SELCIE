@@ -4,4 +4,4 @@ build
 *.egg-info
 *.ipynb_checkpoints
 .DS_Store
-mcp_server/step_plots/
+mcp_server/test_plots/

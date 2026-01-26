@@ -174,6 +174,13 @@ async def handle(arguments: dict) -> list[TextContent]:
                 if obj_region not in density_spec:
                     density_spec[obj_region] = object_density
 
+    # Auto-assign vacuum density to measuring_boundary if not explicitly provided
+    # This makes the common case seamless - users don't need to specify density for a
+    # measurement region that's physically part of the vacuum
+    if "measuring_boundary" in regions and "measuring_boundary" not in density_spec:
+        if "vacuum" in density_spec:
+            density_spec["measuring_boundary"] = density_spec["vacuum"]
+
     for region_name, density_value in density_spec.items():
         if region_name not in regions:
             return [TextContent(

@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-01-21 14:25_
+_Generated: 2026-01-26 22:46_
 
 ---
 
@@ -127,6 +127,7 @@ CUSTOM SHAPES:
 - **`step_file`** (string): Path to STEP/IGES/BREP file (custom_step)
 - **`plate_separation`** (number): Gap between inner surfaces of plates (parallel_plates)
 - **`plate_thickness`** (number): Thickness of each plate (parallel_plates)
+- **`measuring_distance`** (number): Distance from object surface to create measuring boundary shell. Creates 'measuring_boundary' region for evaluation of quantities (e.g field gradient) along the boundary). Recommended when you need to evaluate field gradient at a specific distance from the source, as the mesh resolution is increased at this boundary - use with evaluate mode='boundary_max'. Used by: sphere_in_vacuum.
 
 #### `physics_params` options
 
@@ -148,6 +149,7 @@ Modes:
 - grid: Sample on regular 2D grid
 - max_in_region: Find max/min values within a region, with optional minimum distance from other region(s). Use min_distance_from='all' to exclude points near any other domain boundary.
 - integrate: Compute volume integrals over a region. Returns total force, mass, volume. Essential for torsion balance experiments, Casimir force measurements, and any extended object where thin-shell effects matter.
+- boundary_max: Find max gradient magnitude along a region boundary (e.g., measuring_boundary). Useful for finding peak fifth force at a specific distance from source.
 
 Quantities (for point-based modes):
 - field: Chameleon field φ
@@ -169,7 +171,7 @@ Note: For screened objects, force/torque contributions come from a thin shell of
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `solution_id` | string | Yes | ID of the solution to evaluate |
-| `mode` | `radial` | `line` | `points` | `grid` | `max_in_region` | `integrate` | Yes | Evaluation mode |
+| `mode` | `radial` | `line` | `points` | `grid` | `max_in_region` | `integrate` | `boundary_max` | Yes | Evaluation mode |
 | `params` | object | No | Mode-specific parameters |
 | `quantities` | array[string] | No | Quantities to compute. Default: ['field', 'gradient_magnitude'] |
 
@@ -200,6 +202,8 @@ Note: For screened objects, force/torque contributions come from a thin shell of
 - **`min_distance_from`** (string | array[string]): Region(s) to keep distance from (max_in_region). Can be: a region name, 'all' for all other regions, or a list of region names
 - **`min_distance`** (number): Minimum distance from boundary of exclusion region(s) (max_in_region)
 - **`n_samples`** (integer): Number of random samples (max_in_region). Default: 1000
+- **`boundary`** (`outer` | `inner` | `all`): Which boundary to evaluate for shell regions (boundary_max). 'outer' = adjacent to vacuum, 'inner' = adjacent to object. Default: outer
+- **`adjacent_to`** (string): Explicit region name that the boundary should be adjacent to (boundary_max). Overrides 'boundary' parameter. Use for non-spherical geometries or custom region names.
 
 ---
 

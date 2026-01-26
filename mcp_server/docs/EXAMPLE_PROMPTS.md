@@ -304,7 +304,7 @@ Please:
 3. Solve for the chameleon field
 4. Plot the radial field profile φ(r) and gradient magnitude |∇φ|(r) w
 5. Plot the 2D density, field distribution, and gradient magnitude
-6. Find the max fifth gradient in vacuum at least 0.05 away from ALL other domains (object and wall)
+6. Find the max fifth gradient in vacuum at a measuring boundary 0.05 from the source
 7. Save the plots in this directory
 ```
 
