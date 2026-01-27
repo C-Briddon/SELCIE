@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-01-26 23:28_
+_Generated: 2026-01-27 19:52_
 
 ---
 
@@ -263,6 +263,7 @@ Returns PNG image (base64 or saved to file).
 - **`title`** (string): Custom title
 - **`slice_position`** (number): Position of slice plane (default: 0)
 - **`n_grid`** (integer): Grid resolution for slice sampling (default: 100)
+- **`markers`** (array[object]): Optional markers to overlay on the plot at specified coordinates
 
 ---
 
