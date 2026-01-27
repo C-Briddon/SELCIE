@@ -422,9 +422,9 @@ Setup:
 - Source density: 1e17
 - Vacuum density: 1.0
 
-Find the optimal fifth force at a minimum distance of 0.05 from the source and wall.
+Find the optimal fifth force at a measuring distance of 0.05 from the source.
 
-Explain your reasoning process. Save the results in an optimal directory.
+Explain your reasoning process. Save the results in an optimal directory. 
 ```
 
 ### Step file (sphere baseline)
