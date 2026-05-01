@@ -292,3 +292,28 @@ class TestDensityFunctions:
         assert abs(result - 0.3) < 1e-10
 
 
+class TestSolveUtilities:
+    """Test pure solve helpers."""
+
+    def test_prepare_density_spec_does_not_mutate_input(self):
+        """Region expansion should leave caller-provided density dict unchanged."""
+        from tools.solve import _prepare_density_spec
+
+        density = {"object": 2.0, "vacuum": 1.0}
+        regions = {
+            "object_0": 0,
+            "object_1": 1,
+            "vacuum": 2,
+            "measuring_boundary": 3,
+        }
+
+        prepared = _prepare_density_spec(density, regions)
+
+        assert density == {"object": 2.0, "vacuum": 1.0}
+        assert prepared == {
+            "object_0": 2.0,
+            "object_1": 2.0,
+            "vacuum": 1.0,
+            "measuring_boundary": 1.0,
+        }
+

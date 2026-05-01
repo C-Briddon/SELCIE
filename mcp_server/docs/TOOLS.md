@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-01-27 19:52_
+_Generated: 2026-05-01 13:02_
 
 ---
 
@@ -132,7 +132,7 @@ CUSTOM SHAPES:
 #### `physics_params` options
 
 - **`lambda`** (object): Direct specification of Compton wavelength per region. Example: {"object": 0.001, "wall": 0.002}. If provided, alpha/density are ignored.
-- **`alpha`** (number): Dimensionless coupling constant α. Used with 'density' to compute λ = √(α/n(n+1)) × ρ^(-(n+2)/(2(n+1))) for each region.
+- **`alpha`** (number): Dimensionless coupling constant α. Used with 'density' to compute λ = √(α/(n+1)) × ρ^(-(n+2)/(2(n+1))) for each region.
 - **`density`** (object): Dimensionless density ρ̂ = ρ/ρ₀ per region. Value is: number, {expression: str}, or {file: str, format?: 'tabulated'|'grid', columns?: int[], bounds?: number[], skip_header?: int, npz_key?: str}. For tabulated: columns selects columns (1-based). For grid: bounds maps grid to spatial coordinates. For non-numeric values, max density is used to compute λ.
 - **`n`** (integer): Potential power index (default: 1)
 
@@ -247,6 +247,7 @@ Returns PNG image (base64 or saved to file).
 | `options` | object | No | Plot customization options |
 | `output_path` | string | No | Save to file path. If not provided, returns base64 image |
 | `format` | `png` | `pdf` | `svg` | No | Output format. Default: png Default: `"png"` |
+| `debug` | boolean | No | Include Python tracebacks in error responses. Default: false Default: `False` |
 
 #### `options` options
 
@@ -346,5 +347,10 @@ Parameters:
 | `initial_guess` | `constant` | `adiabatic` | `previous` | No | Initial guess strategy. Default: constant (recommended for SELCIE) Default: `"constant"` |
 | `custom_id` | string | No | Custom solution ID. Default: auto-generated |
 | `deg_V` | integer | No | Function space degree (1=CG1, 2=CG2). Default: 2 Default: `2` |
+| `display_progress` | boolean | No | Print Picard iteration progress to stderr/stdout. Default: false Default: `False` |
+| `linear_solver` | `default` | `krylov` | No | Linear solver for large meshes. 'default' uses SELCIE's original solve; 'krylov' uses iterative Krylov solving. Default: krylov Default: `"krylov"` |
+| `krylov_method` | string | No | Krylov method used when linear_solver='krylov'. Default: cg Default: `"cg"` |
+| `krylov_preconditioner` | string | No | Krylov preconditioner used when linear_solver='krylov'. Default: hypre_amg Default: `"hypre_amg"` |
+| `debug` | boolean | No | Include Python tracebacks in error responses. Default: false Default: `False` |
 
 ---

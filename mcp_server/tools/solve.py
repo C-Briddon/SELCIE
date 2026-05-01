@@ -84,6 +84,32 @@ Parameters:
                 "type": "integer",
                 "description": "Function space degree (1=CG1, 2=CG2). Default: 2",
                 "default": 2
+            },
+            "display_progress": {
+                "type": "boolean",
+                "description": "Print Picard iteration progress to stderr/stdout. Default: false",
+                "default": False
+            },
+            "linear_solver": {
+                "type": "string",
+                "enum": ["default", "krylov"],
+                "description": "Linear solver for large meshes. 'default' uses SELCIE's original solve; 'krylov' uses iterative Krylov solving. Default: krylov",
+                "default": "krylov"
+            },
+            "krylov_method": {
+                "type": "string",
+                "description": "Krylov method used when linear_solver='krylov'. Default: cg",
+                "default": "cg"
+            },
+            "krylov_preconditioner": {
+                "type": "string",
+                "description": "Krylov preconditioner used when linear_solver='krylov'. Default: hypre_amg",
+                "default": "hypre_amg"
+            },
+            "debug": {
+                "type": "boolean",
+                "description": "Include Python tracebacks in error responses. Default: false",
+                "default": False
             }
         },
         "required": ["mesh_id", "alpha", "density"]
@@ -98,6 +124,28 @@ def _symmetry_to_selcie(symmetry: str) -> str:
         "translation": "translation symmetry",
     }
     return mapping.get(symmetry, symmetry)
+
+
+def _prepare_density_spec(density_spec: dict, regions: dict[str, int]) -> dict:
+    """Return a solver-ready density spec without mutating caller input."""
+    prepared = dict(density_spec)
+
+    # Expand "object" to all object_* regions if mesh has multi-region objects
+    if "object" in prepared and "object" not in regions:
+        object_regions = [r for r in regions.keys() if r.startswith("object_")]
+        if object_regions:
+            object_density = prepared.pop("object")
+            for obj_region in object_regions:
+                if obj_region not in prepared:
+                    prepared[obj_region] = object_density
+
+    # Auto-assign vacuum density to measuring_boundary if not explicitly provided.
+    # This makes the common case seamless: measurement regions are physically vacuum.
+    if "measuring_boundary" in regions and "measuring_boundary" not in prepared:
+        if "vacuum" in prepared:
+            prepared["measuring_boundary"] = prepared["vacuum"]
+
+    return prepared
 
 
 async def handle(arguments: dict) -> list[TextContent]:
@@ -124,6 +172,18 @@ async def handle(arguments: dict) -> list[TextContent]:
     linear_solver = arguments.get("linear_solver", "krylov")
     krylov_method = arguments.get("krylov_method", "cg")
     krylov_preconditioner = arguments.get("krylov_preconditioner", "hypre_amg")
+    debug = arguments.get("debug", False)
+
+    if linear_solver not in ("default", "krylov"):
+        return [TextContent(
+            type="text",
+            text=json.dumps({
+                "error": {
+                    "code": "INVALID_PARAMETER",
+                    "message": "linear_solver must be 'default' or 'krylov'",
+                }
+            }, indent=2)
+        )]
 
     # Validate mesh exists
     mesh_info = session.get_mesh(mesh_id)
@@ -165,21 +225,7 @@ async def handle(arguments: dict) -> list[TextContent]:
     marker_to_func = {}
     density_stats = {"rho_min": float("inf"), "rho_max": float("-inf")}
 
-    # Expand "object" to all object_* regions if mesh has multi-region objects
-    if "object" in density_spec and "object" not in regions:
-        object_regions = [r for r in regions.keys() if r.startswith("object_")]
-        if object_regions:
-            object_density = density_spec.pop("object")
-            for obj_region in object_regions:
-                if obj_region not in density_spec:
-                    density_spec[obj_region] = object_density
-
-    # Auto-assign vacuum density to measuring_boundary if not explicitly provided
-    # This makes the common case seamless - users don't need to specify density for a
-    # measurement region that's physically part of the vacuum
-    if "measuring_boundary" in regions and "measuring_boundary" not in density_spec:
-        if "vacuum" in density_spec:
-            density_spec["measuring_boundary"] = density_spec["vacuum"]
+    density_spec = _prepare_density_spec(density_spec, regions)
 
     for region_name, density_value in density_spec.items():
         if region_name not in regions:
@@ -443,13 +489,14 @@ async def handle(arguments: dict) -> list[TextContent]:
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
     except Exception as e:
-        import traceback
         error_result = {
             "solution_id": None,
             "status": "failed",
             "error": str(e),
-            "traceback": traceback.format_exc(),
             "suggestion": "Check density specification and mesh compatibility. Try relaxation < 1 for difficult convergence. If geometry has small holes or high curvature, try increasing mesh resolution (e.g., 'fine' or 'very_fine')."
         }
+        if debug:
+            import traceback
+            error_result["traceback"] = traceback.format_exc()
         import json
         return [TextContent(type="text", text=json.dumps(error_result, indent=2))]

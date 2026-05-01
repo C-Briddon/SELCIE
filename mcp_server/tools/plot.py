@@ -90,6 +90,11 @@ Returns PNG image (base64 or saved to file).
                 "enum": ["png", "pdf", "svg"],
                 "description": "Output format. Default: png",
                 "default": "png"
+            },
+            "debug": {
+                "type": "boolean",
+                "description": "Include Python tracebacks in error responses. Default: false",
+                "default": False
             }
         },
         "required": ["solution_id", "plot_type"]
@@ -789,11 +794,13 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
             ]
 
     except Exception as e:
-        import traceback
-        return [TextContent(type="text", text=json.dumps({
+        error = {
             "error": {
                 "code": "PLOT_ERROR",
                 "message": str(e),
-                "traceback": traceback.format_exc()
             }
-        }, indent=2))]
+        }
+        if arguments.get("debug", False):
+            import traceback
+            error["error"]["traceback"] = traceback.format_exc()
+        return [TextContent(type="text", text=json.dumps(error, indent=2))]

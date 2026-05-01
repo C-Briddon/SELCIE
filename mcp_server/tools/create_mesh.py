@@ -79,6 +79,18 @@ REFINEMENT_LIMITS = {
 DEFAULT_MAX_CELLS = 2000000
 
 
+def _resolve_input_path(path: str) -> str:
+    """Resolve user-supplied input files from cwd or the MCP server root."""
+    if os.path.isabs(path) or os.path.exists(path):
+        return path
+
+    server_relative = os.path.join(os.path.dirname(os.path.dirname(__file__)), path)
+    if os.path.exists(server_relative):
+        return server_relative
+
+    return path
+
+
 def validate_geometry_params(geometry: str, params: dict) -> list[str]:
     """Validate geometry parameters for logical consistency.
 
@@ -297,7 +309,7 @@ def estimate_physics_refinement(
 def _compute_lambda(alpha: float, rho: float, n: int = 1) -> float:
     """Compute Compton wavelength from physics parameters.
 
-    λ = √(α / n(n+1)) × ρ^(-(n+2)/(2(n+1)))
+    λ = √(α / (n+1)) × ρ^(-(n+2)/(2(n+1)))
 
     Args:
         alpha: Dimensionless coupling constant
@@ -309,7 +321,7 @@ def _compute_lambda(alpha: float, rho: float, n: int = 1) -> float:
     """
     import math
     exponent = -(n + 2) / (2 * (n + 1))
-    return math.sqrt(alpha / (n * (n + 1))) * (rho ** exponent)
+    return math.sqrt(alpha / (n + 1)) * (rho ** exponent)
 
 
 TOOL_DEFINITION = Tool(
@@ -447,7 +459,7 @@ TOOL_DEFINITION = Tool(
                         "type": "number",
                         "description": (
                             "Dimensionless coupling constant α. Used with 'density' to compute "
-                            "λ = √(α/n(n+1)) × ρ^(-(n+2)/(2(n+1))) for each region."
+                            "λ = √(α/(n+1)) × ρ^(-(n+2)/(2(n+1))) for each region."
                         ),
                     },
                     "density": {
@@ -470,7 +482,8 @@ TOOL_DEFINITION = Tool(
 
 def _get_mesh_dir() -> str:
     """Get directory for storing mesh files."""
-    mesh_dir = os.path.join(tempfile.gettempdir(), "selcie_meshes")
+    session = get_session()
+    mesh_dir = os.path.join(tempfile.gettempdir(), "selcie_meshes", session.session_id)
     os.makedirs(mesh_dir, exist_ok=True)
     # Also create Saved Meshes subdirectory (required by SELCIE)
     saved_meshes_dir = os.path.join(mesh_dir, "Saved Meshes")
@@ -1193,7 +1206,7 @@ def _create_custom_2d(
 
     # Load points from file or use direct points
     if "shape_file" in params:
-        points_2d = np.loadtxt(params["shape_file"])
+        points_2d = np.loadtxt(_resolve_input_path(params["shape_file"]))
     elif "points" in params:
         points_2d = np.array(params["points"])
     else:
@@ -1301,7 +1314,7 @@ def _create_custom_3d(
         contours = params["contours"]
     elif "contour_file" in params:
         # Load contours from file (blank line separates contours)
-        with open(params["contour_file"], 'r') as f:
+        with open(_resolve_input_path(params["contour_file"]), 'r') as f:
             content = f.read()
         contour_strs = content.strip().split('\n\n')
         contours = []
@@ -1369,7 +1382,7 @@ def _create_custom_step(
     import gmsh
     import os
 
-    step_file = params["step_file"]
+    step_file = _resolve_input_path(params["step_file"])
     domain_radius = params.get("domain_radius")  # Optional, auto-calculated if not provided
 
     # Validate file exists
@@ -1828,7 +1841,7 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
         elif geometry == "shell_in_vacuum":
             subdomain_size = params.get("outer_radius")
         elif geometry == "cylinder_in_vacuum":
-            subdomain_size = min(params.get("object_radius", 0), params.get("height", 0) / 2)
+            subdomain_size = min(params.get("object_radius", 0), params.get("object_height", 0) / 2)
         elif geometry == "two_spheres":
             subdomain_size = min(params.get("radius_1", 0), params.get("radius_2", 0))
         elif geometry == "sphere_near_wall":

@@ -18,14 +18,15 @@ if [ -n "$TOOLS_CHANGED" ]; then
 
     # Run the doc generator
     cd "$MCP_SERVER_DIR"
-    python scripts/generate_docs.py 2>/dev/null
+    python scripts/generate_docs.py
 
     if [ $? -eq 0 ]; then
         # Add the updated docs to the commit
         git add docs/TOOLS.md
         echo "TOOLS.md documentation updated and staged."
     else
-        echo "Warning: Failed to regenerate documentation"
+        echo "Error: Failed to regenerate MCP tool documentation"
+        exit 1
     fi
 fi
 
