@@ -1979,6 +1979,7 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
     # Get mesh statistics by reading the generated mesh (for both custom_step and other geometries)
     n_cells = 0
     n_vertices = 0
+    mesh_stats_error = None
     try:
         import meshio
         mesh_file = os.path.join(mesh_path, "mesh.xdmf")
@@ -1986,8 +1987,14 @@ async def handle(args: dict[str, Any]) -> list[TextContent]:
         n_vertices = len(mesh.points)
         for cell_block in mesh.cells:
             n_cells += len(cell_block.data)
-    except Exception:
-        pass  # meshio may not be installed or file format issue
+    except Exception as e:
+        # meshio may not be installed or file format issue
+        mesh_stats_error = str(e)
+        warnings.append(
+            f"Could not read mesh statistics ({mesh_stats_error}). "
+            f"n_cells and n_vertices are reported as 0 and the "
+            f"{DEFAULT_MAX_CELLS:,}-cell limit was not enforced."
+        )
 
     # Check cell count limit
     allow_large_mesh = args.get("allow_large_mesh", False)

@@ -2,6 +2,7 @@
 """Solve tool for SELCIE MCP server."""
 
 import json
+import math
 import os
 import time
 
@@ -32,7 +33,7 @@ Parameters:
 - tol: Convergence tolerance (default: 1e-14)
 - max_iter: Maximum iterations (default: 100)
 - relaxation: Relaxation factor for Picard iteration (0-1]. In tests 1 performs well, and is faster, so is recommeneded. Default: 1.0
-- initial_guess: "constant" (default, recommended for SELCIE), "adiabatic", or "previous"
+- initial_guess: "constant" (default, recommended for SELCIE), "adiabatic" (start from φ = ρ̂^{-1/(n+1)}; good for smooth density profiles, can diverge for discontinuous region densities), or "previous" (start from an earlier solution on the same mesh; see initial_guess_solution_id)
 """,
     inputSchema={
         "type": "object",
@@ -73,8 +74,12 @@ Parameters:
             "initial_guess": {
                 "type": "string",
                 "enum": ["constant", "adiabatic", "previous"],
-                "description": "Initial guess strategy. Default: constant (recommended for SELCIE)",
+                "description": "Initial guess strategy. 'constant' starts from the minimum field value (recommended for SELCIE). 'adiabatic' starts from φ = ρ̂^{-1/(n+1)} per region; converges faster for smooth density profiles (e.g. NFW) but can diverge when region densities are discontinuous. 'previous' starts from an earlier solution on the same mesh (see initial_guess_solution_id). Default: constant",
                 "default": "constant"
+            },
+            "initial_guess_solution_id": {
+                "type": "string",
+                "description": "Solution ID to start from when initial_guess='previous'. Must be a solution on the same mesh with the same deg_V. Default: most recent solution on this mesh."
             },
             "custom_id": {
                 "type": "string",
@@ -115,6 +120,13 @@ Parameters:
         "required": ["mesh_id", "alpha", "density"]
     }
 )
+
+
+def _finite_or_none(value):
+    """Map non-finite floats to None so responses stay valid JSON."""
+    if value is None:
+        return None
+    return value if math.isfinite(value) else None
 
 
 def _symmetry_to_selcie(symmetry: str) -> str:
@@ -190,7 +202,12 @@ async def handle(arguments: dict) -> list[TextContent]:
     if mesh_info is None:
         return [TextContent(
             type="text",
-            text=f'{{"error": "Mesh \'{mesh_id}\' not found. Available meshes: {list(session.meshes.keys())}"}}'
+            text=json.dumps({
+                "error": {
+                    "code": "MESH_NOT_FOUND",
+                    "message": f"Mesh '{mesh_id}' not found. Available meshes: {list(session.meshes.keys())}",
+                }
+            }, indent=2)
         )]
 
     # Get mesh properties
@@ -214,7 +231,12 @@ async def handle(arguments: dict) -> list[TextContent]:
     if not regions:
         return [TextContent(
             type="text",
-            text='{"error": "Mesh has no region information. Cannot assign density profiles."}'
+            text=json.dumps({
+                "error": {
+                    "code": "NO_REGIONS",
+                    "message": "Mesh has no region information. Cannot assign density profiles.",
+                }
+            }, indent=2)
         )]
 
     max_marker = max(regions.values())
@@ -231,7 +253,12 @@ async def handle(arguments: dict) -> list[TextContent]:
         if region_name not in regions:
             return [TextContent(
                 type="text",
-                text=f'{{"error": "Region \'{region_name}\' not found in mesh. Available regions: {list(regions.keys())}"}}'
+                text=json.dumps({
+                    "error": {
+                        "code": "UNKNOWN_REGION",
+                        "message": f"Region '{region_name}' not found in mesh. Available regions: {list(regions.keys())}",
+                    }
+                }, indent=2)
             )]
 
         marker = regions[region_name]
@@ -257,11 +284,87 @@ async def handle(arguments: dict) -> list[TextContent]:
             missing_regions = [name for name, m in regions.items() if m == marker]
             return [TextContent(
                 type="text",
-                text=f'{{"error": "No density specified for marker {marker} (regions: {missing_regions}). Provide density for all regions."}}'
+                text=json.dumps({
+                    "error": {
+                        "code": "MISSING_DENSITY",
+                        "message": f"No density specified for marker {marker} (regions: {missing_regions}). Provide density for all regions.",
+                    }
+                }, indent=2)
             )]
 
     # Build profiles list ordered by marker
     profiles = [marker_to_func[i] for i in range(n_subdomains)]
+
+    # Resolve previous solution for initial_guess='previous' before starting
+    # the (potentially expensive) solve
+    prev_solution_info = None
+    prev_field_path = None
+    if initial_guess == "previous":
+        prev_id = arguments.get("initial_guess_solution_id")
+        if prev_id is not None:
+            prev_solution_info = session.get_solution(prev_id)
+            if prev_solution_info is None:
+                return [TextContent(
+                    type="text",
+                    text=json.dumps({
+                        "error": {
+                            "code": "SOLUTION_NOT_FOUND",
+                            "message": f"initial_guess_solution_id '{prev_id}' not found. Available solutions: {list(session.solutions.keys())}",
+                        }
+                    }, indent=2)
+                )]
+        else:
+            same_mesh = [s for s in session.solutions.values() if s.mesh_id == mesh_id]
+            if same_mesh:
+                prev_solution_info = same_mesh[-1]
+
+        if prev_solution_info is None:
+            return [TextContent(
+                type="text",
+                text=json.dumps({
+                    "error": {
+                        "code": "INITIAL_GUESS_UNAVAILABLE",
+                        "message": f"initial_guess='previous' requires an existing solution on mesh '{mesh_id}', but none was found. Solve once with initial_guess='constant' first.",
+                    }
+                }, indent=2)
+            )]
+
+        if prev_solution_info.mesh_id != mesh_id:
+            return [TextContent(
+                type="text",
+                text=json.dumps({
+                    "error": {
+                        "code": "INITIAL_GUESS_MESH_MISMATCH",
+                        "message": f"Solution '{prev_solution_info.solution_id}' was computed on mesh '{prev_solution_info.mesh_id}', not '{mesh_id}'. The previous solution must be on the same mesh.",
+                    }
+                }, indent=2)
+            )]
+
+        if prev_solution_info.deg_V != deg_V:
+            return [TextContent(
+                type="text",
+                text=json.dumps({
+                    "error": {
+                        "code": "INITIAL_GUESS_DEGREE_MISMATCH",
+                        "message": f"Solution '{prev_solution_info.solution_id}' used deg_V={prev_solution_info.deg_V} but this solve uses deg_V={deg_V}. Set deg_V={prev_solution_info.deg_V} or choose a different solution.",
+                    }
+                }, indent=2)
+            )]
+
+        prev_field_path = os.path.join(
+            os.path.dirname(os.path.dirname(mesh_info.mesh_path)),
+            "Saved Solutions", prev_solution_info.solution_id, "field.h5"
+        )
+        if not os.path.exists(prev_field_path):
+            return [TextContent(
+                type="text",
+                text=json.dumps({
+                    "error": {
+                        "code": "INITIAL_GUESS_UNAVAILABLE",
+                        "message": f"Field file for solution '{prev_solution_info.solution_id}' not found at {prev_field_path}. It may have been cleared.",
+                    }
+                }, indent=2)
+            )]
 
     start_time = time.time()
 
@@ -290,17 +393,14 @@ async def handle(arguments: dict) -> list[TextContent]:
         )
 
         # Handle initial guess
+        # FieldSolver wraps initial_field_profiles (one function per
+        # subdomain, ordered by marker) in SELCIE's InitialiseField
         initial_field_profiles = None
         if initial_guess == "adiabatic":
             # Adiabatic: phi = rho^(-1/(n+1))
-            adiabatic_profiles = []
-            for func in profiles:
-                def make_adiabatic(f, n_val):
-                    return lambda x: pow(max(f(x), 1e-30), -1.0 / (n_val + 1))
-                adiabatic_profiles.append(make_adiabatic(func, n))
-            # TODO: Use InitialiseField class if needed
-            # For now, use None which gives constant initial guess at minimum field value
-            initial_field_profiles = None
+            def make_adiabatic(f, n_val):
+                return lambda x: pow(max(f(x), 1e-30), -1.0 / (n_val + 1))
+            initial_field_profiles = [make_adiabatic(func, n) for func in profiles]
 
         # Create solver
         solver = FieldSolver(
@@ -310,6 +410,11 @@ async def handle(arguments: dict) -> list[TextContent]:
             initial_field_profiles=initial_field_profiles,
             deg_V=deg_V
         )
+
+        # Start from a previous solution's field if requested
+        if prev_field_path is not None:
+            with d.HDF5File(solver.mesh.mpi_comm(), prev_field_path, "r") as f:
+                f.read(solver.field, "field")
 
         # Run solver (picard iteration with optimized linear solver)
         # Use optimized linear solver for larger meshes, default for smaller
@@ -335,6 +440,7 @@ async def handle(arguments: dict) -> list[TextContent]:
         converged = picard_result["converged"]
         iterations = picard_result["iterations"]
         final_du_norm = picard_result["final_du_norm"]
+        diverged = not converged and not math.isfinite(final_du_norm)
 
         # Get field statistics
         field_vector = solver.field.vector()
@@ -453,23 +559,24 @@ async def handle(arguments: dict) -> list[TextContent]:
                 "rho_min": density_min if density_saved else (density_stats["rho_min"] if density_stats["rho_min"] != float("inf") else None),
                 "rho_max": density_max if density_saved else (density_stats["rho_max"] if density_stats["rho_max"] != float("-inf") else None)
             },
-            "status": "converged" if converged else "max_iterations_not_converged",
+            "status": "converged" if converged else ("diverged" if diverged else "max_iterations_not_converged"),
             "iterations": iterations,
-            "final_du_norm": final_du_norm,
-            "pde_residual": pde_residual,
+            "final_du_norm": _finite_or_none(final_du_norm),
+            "pde_residual": _finite_or_none(pde_residual),
             "method_used": "picard",
             "relaxation_used": relaxation,
             "initial_guess": initial_guess,
+            "initial_guess_solution_id": prev_solution_info.solution_id if prev_solution_info else None,
             "field_stats": {
-                "min": field_min,
-                "max": field_max,
-                "mean": field_mean,
-                "at_origin": field_at_origin
+                "min": _finite_or_none(field_min),
+                "max": _finite_or_none(field_max),
+                "mean": _finite_or_none(field_mean),
+                "at_origin": _finite_or_none(field_at_origin)
             },
             "gradient_stats": {
                 "computed": grad_computed,
-                "magnitude_min": grad_mag_min,
-                "magnitude_max": grad_mag_max,
+                "magnitude_min": _finite_or_none(grad_mag_min),
+                "magnitude_max": _finite_or_none(grad_mag_max),
             },
             "saved_files": {
                 "field": "field.h5",
@@ -481,11 +588,17 @@ async def handle(arguments: dict) -> list[TextContent]:
             "runtime_seconds": round(runtime, 2)
         }
 
+        if diverged:
+            result["suggestion"] = (
+                "Solver diverged (du_norm is not finite). Try initial_guess='constant' "
+                "(recommended for discontinuous densities), relaxation < 1, or check "
+                "the density specification."
+            )
+
         # Add warning if mesh was large
         if large_mesh_warning:
             result["warning"] = large_mesh_warning
 
-        import json
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
     except Exception as e:
@@ -498,5 +611,4 @@ async def handle(arguments: dict) -> list[TextContent]:
         if debug:
             import traceback
             error_result["traceback"] = traceback.format_exc()
-        import json
         return [TextContent(type="text", text=json.dumps(error_result, indent=2))]

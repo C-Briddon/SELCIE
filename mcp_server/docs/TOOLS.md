@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-05-01 13:02_
+_Generated: 2026-06-10 23:01_
 
 ---
 
@@ -331,7 +331,7 @@ Parameters:
 - tol: Convergence tolerance (default: 1e-14)
 - max_iter: Maximum iterations (default: 100)
 - relaxation: Relaxation factor for Picard iteration (0-1]. In tests 1 performs well, and is faster, so is recommeneded. Default: 1.0
-- initial_guess: "constant" (default, recommended for SELCIE), "adiabatic", or "previous"
+- initial_guess: "constant" (default, recommended for SELCIE), "adiabatic" (start from φ = ρ̂^{-1/(n+1)}; good for smooth density profiles, can diverge for discontinuous region densities), or "previous" (start from an earlier solution on the same mesh; see initial_guess_solution_id)
 
 ### Parameters
 
@@ -344,7 +344,8 @@ Parameters:
 | `tol` | number | No | Convergence tolerance. Default: 1e-14 Default: `1e-14` |
 | `max_iter` | integer | No | Maximum iterations. Default: 100 Default: `100` |
 | `relaxation` | number | No | Relaxation factor for Picard iteration (0-1]. In tests 1 performs well, and is faster, so is recommeneded. Default: 1.0 Default: `1.0` |
-| `initial_guess` | `constant` | `adiabatic` | `previous` | No | Initial guess strategy. Default: constant (recommended for SELCIE) Default: `"constant"` |
+| `initial_guess` | `constant` | `adiabatic` | `previous` | No | Initial guess strategy. 'constant' starts from the minimum field value (recommended for SELCIE). 'adiabatic' starts from φ = ρ̂^{-1/(n+1)} per region; converges faster for smooth density profiles (e.g. NFW) but can diverge when region densities are discontinuous. 'previous' starts from an earlier solution on the same mesh (see initial_guess_solution_id). Default: constant Default: `"constant"` |
+| `initial_guess_solution_id` | string | No | Solution ID to start from when initial_guess='previous'. Must be a solution on the same mesh with the same deg_V. Default: most recent solution on this mesh. |
 | `custom_id` | string | No | Custom solution ID. Default: auto-generated |
 | `deg_V` | integer | No | Function space degree (1=CG1, 2=CG2). Default: 2 Default: `2` |
 | `display_progress` | boolean | No | Print Picard iteration progress to stderr/stdout. Default: false Default: `False` |
