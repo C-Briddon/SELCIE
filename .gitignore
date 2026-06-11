@@ -5,3 +5,4 @@ build
 *.ipynb_checkpoints
 .DS_Store
 mcp_server/test_plots/
+experiments
