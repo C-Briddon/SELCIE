@@ -24,6 +24,7 @@ class TestCreateMeshSphereInVacuum:
     async def test_basic_sphere(self):
         """Create a basic sphere in vacuum mesh."""
         from tools.create_mesh import handle
+        from utils.session import get_session
 
         result = await handle({
             "geometry": "sphere_in_vacuum",
@@ -44,6 +45,7 @@ class TestCreateMeshSphereInVacuum:
         assert data["dimension"] == 2
         assert "object" in data["regions"]
         assert "vacuum" in data["regions"]
+        assert get_session().session_id in Path(data["mesh_path"]).parts
 
     @pytest.mark.asyncio
     async def test_missing_params(self):
@@ -264,7 +266,7 @@ class TestCreateMeshPhysicsRefinement:
 
         alpha = 1e18
         object_density = 1e17
-        n = 1
+        n = 2
 
         result = await handle({
             "geometry": "sphere_in_vacuum",
@@ -283,8 +285,8 @@ class TestCreateMeshPhysicsRefinement:
         assert data["physics_refinement"]["refinement_applied"] is True
 
         # Verify lambda was computed correctly for each region
-        # λ = √(α / n(n+1)) × ρ^(-(n+2)/(2(n+1)))
-        expected_lambda_object = math.sqrt(alpha / (n * (n + 1))) * (object_density ** (-(n + 2) / (2 * (n + 1))))
+        # λ = √(α / (n+1)) × ρ^(-(n+2)/(2(n+1)))
+        expected_lambda_object = math.sqrt(alpha / (n + 1)) * (object_density ** (-(n + 2) / (2 * (n + 1))))
 
         # Check lambda_per_region contains computed values
         assert "lambda_per_region" in data["physics_refinement"]
@@ -373,6 +375,39 @@ class TestCreateMeshPhysicsRefinement:
 
         # Vacuum should have much larger lambda (lower density)
         assert lambda_per_region["vacuum"] > lambda_per_region["object"] * 100
+
+    def test_computed_lambda_matches_physics_utility(self):
+        """Mesh refinement and physical-parameter tools should use the same lambda."""
+        from tools.create_mesh import _compute_lambda
+        from utils.physics import calculate_lambda_hat
+
+        alpha = 1e6
+        rho = 1e4
+        for n in [1, 2, 4]:
+            assert _compute_lambda(alpha, rho, n) == pytest.approx(
+                calculate_lambda_hat(alpha, n, rho)
+            )
+
+    @pytest.mark.asyncio
+    async def test_cylinder_physics_refinement_uses_object_height(self):
+        """Cylinder refinement should use object_height as the length parameter."""
+        from tools.create_mesh import handle
+
+        result = await handle({
+            "geometry": "cylinder_in_vacuum",
+            "params": {
+                "object_radius": 0.1,
+                "object_height": 0.2,
+                "domain_radius": 1.0,
+            },
+            "mesh_quality": "coarse",
+            "physics_params": {"lambda": {"cylinder": 0.01}},
+        })
+
+        data = json.loads(result[0].text)
+        assert "error" not in data
+        assert "physics_refinement" in data
+        assert data["physics_refinement"]["refinement_applied"] is True
 
 
 class TestCreateMeshCustom2D:

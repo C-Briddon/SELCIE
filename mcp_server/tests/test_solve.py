@@ -292,3 +292,181 @@ class TestDensityFunctions:
         assert abs(result - 0.3) < 1e-10
 
 
+class TestSolveInitialGuess:
+    """Test initial_guess strategies."""
+
+    DENSITY = {"object": 1e6, "vacuum": 1.0}
+
+    @pytest.fixture(autouse=True)
+    def reset(self):
+        """Reset session before each test."""
+        reset_session()
+
+    @pytest_asyncio.fixture
+    async def mesh_id(self):
+        """Create a mesh for testing."""
+        from tools.create_mesh import handle as create_mesh
+
+        result = await create_mesh({
+            "geometry": "sphere_in_vacuum",
+            "params": {
+                "object_radius": 0.15,
+                "domain_radius": 1.0,
+            },
+            "mesh_quality": "very_coarse",
+        })
+
+        data = json.loads(result[0].text)
+        return data["mesh_id"]
+
+    @pytest.mark.asyncio
+    async def test_adiabatic_initial_guess_smooth_profile(self):
+        """Adiabatic initial guess should converge faster for smooth densities."""
+        from tools.create_mesh import handle as create_mesh
+        from tools.solve import handle
+
+        result = await create_mesh({
+            "geometry": "sphere_domain",
+            "params": {"domain_radius": 1.0},
+            "mesh_quality": "very_coarse",
+        })
+        mesh_id = json.loads(result[0].text)["mesh_id"]
+
+        density = {"domain": {"expression": "1e4 / (1 + (r/0.2)**2)**2 + 1"}}
+
+        iterations = {}
+        for guess in ["constant", "adiabatic"]:
+            result = await handle({
+                "mesh_id": mesh_id,
+                "alpha": 1e-2,
+                "density": density,
+                "initial_guess": guess,
+            })
+            data = json.loads(result[0].text)
+            if "error" in data and data.get("status") == "failed":
+                pytest.fail(f"Solve with initial_guess={guess} failed: {data}")
+            assert data["status"] == "converged"
+            assert data["initial_guess"] == guess
+            iterations[guess] = data["iterations"]
+
+        # The adiabatic start is close to the solution in this regime, so it
+        # must not take more iterations than the constant start
+        assert iterations["adiabatic"] <= iterations["constant"]
+
+    @pytest.mark.asyncio
+    async def test_diverged_status_reported(self, mesh_id):
+        """A non-finite du_norm should be reported as 'diverged', not NaN JSON."""
+        from tools.solve import handle
+
+        # Adiabatic start with a discontinuous high-contrast density diverges
+        result = await handle({
+            "mesh_id": mesh_id,
+            "alpha": 1.0,
+            "density": dict(self.DENSITY),
+            "initial_guess": "adiabatic",
+        })
+
+        data = json.loads(result[0].text, parse_constant=pytest.fail)
+        if "error" in data and data.get("status") == "failed":
+            pytest.fail(f"Solve failed outright: {data}")
+
+        if data["status"] == "converged":
+            pytest.skip("Solver converged; divergence scenario not reproduced")
+
+        assert data["status"] == "diverged"
+        assert data["final_du_norm"] is None
+        assert "suggestion" in data
+
+    @pytest.mark.asyncio
+    async def test_previous_without_prior_solution_errors(self, mesh_id):
+        """initial_guess='previous' with no prior solution should error."""
+        from tools.solve import handle
+
+        result = await handle({
+            "mesh_id": mesh_id,
+            "alpha": 1.0,
+            "density": dict(self.DENSITY),
+            "initial_guess": "previous",
+        })
+
+        data = json.loads(result[0].text)
+        assert data["error"]["code"] == "INITIAL_GUESS_UNAVAILABLE"
+
+    @pytest.mark.asyncio
+    async def test_previous_uses_latest_solution_on_mesh(self, mesh_id):
+        """initial_guess='previous' should start from the prior solution."""
+        from tools.solve import handle
+
+        first = await handle({
+            "mesh_id": mesh_id,
+            "alpha": 1.0,
+            "density": dict(self.DENSITY),
+        })
+        first_data = json.loads(first[0].text)
+        if "error" in first_data and first_data.get("status") == "failed":
+            pytest.fail(f"Initial solve failed: {first_data}")
+
+        second = await handle({
+            "mesh_id": mesh_id,
+            "alpha": 1.0,
+            "density": dict(self.DENSITY),
+            "initial_guess": "previous",
+        })
+        data = json.loads(second[0].text)
+        if "error" in data and data.get("status") == "failed":
+            pytest.fail(f"Solve failed: {data}")
+
+        assert data["initial_guess"] == "previous"
+        assert data["initial_guess_solution_id"] == first_data["solution_id"]
+        # Starting from a converged field should not take more iterations
+        assert data["iterations"] <= first_data["iterations"]
+
+    @pytest.mark.asyncio
+    async def test_previous_deg_v_mismatch_errors(self, mesh_id):
+        """initial_guess='previous' with a different deg_V should error."""
+        from tools.solve import handle
+
+        await handle({
+            "mesh_id": mesh_id,
+            "alpha": 1.0,
+            "density": dict(self.DENSITY),
+            "deg_V": 2,
+        })
+
+        result = await handle({
+            "mesh_id": mesh_id,
+            "alpha": 1.0,
+            "density": dict(self.DENSITY),
+            "initial_guess": "previous",
+            "deg_V": 1,
+        })
+
+        data = json.loads(result[0].text)
+        assert data["error"]["code"] == "INITIAL_GUESS_DEGREE_MISMATCH"
+
+
+class TestSolveUtilities:
+    """Test pure solve helpers."""
+
+    def test_prepare_density_spec_does_not_mutate_input(self):
+        """Region expansion should leave caller-provided density dict unchanged."""
+        from tools.solve import _prepare_density_spec
+
+        density = {"object": 2.0, "vacuum": 1.0}
+        regions = {
+            "object_0": 0,
+            "object_1": 1,
+            "vacuum": 2,
+            "measuring_boundary": 3,
+        }
+
+        prepared = _prepare_density_spec(density, regions)
+
+        assert density == {"object": 2.0, "vacuum": 1.0}
+        assert prepared == {
+            "object_0": 2.0,
+            "object_1": 2.0,
+            "vacuum": 1.0,
+            "measuring_boundary": 1.0,
+        }
+

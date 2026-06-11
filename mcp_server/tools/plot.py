@@ -63,7 +63,22 @@ Returns PNG image (base64 or saved to file).
                     "title": {"type": "string", "description": "Custom title"},
                     "slice_position": {"type": "number", "description": "Position of slice plane (default: 0)"},
                     "n_grid": {"type": "integer", "description": "Grid resolution for slice sampling (default: 100)"},
-                    "quantity": {"type": "string", "enum": ["field", "gradient_magnitude", "density"], "description": "Quantity to plot in slice (default: field)"}
+                    "quantity": {"type": "string", "enum": ["field", "gradient_magnitude", "density"], "description": "Quantity to plot in slice (default: field)"},
+                    "markers": {
+                        "type": "array",
+                        "description": "Optional markers to overlay on the plot at specified coordinates",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "position": {"type": "array", "items": {"type": "number"}, "description": "Coordinates [x, y] for the marker"},
+                                "label": {"type": "string", "description": "Optional text label for the marker"},
+                                "color": {"type": "string", "description": "Marker color (default: 'red')"},
+                                "marker": {"type": "string", "description": "Marker shape, e.g. 'o', 'x', '+', 's', '*' (default: 'x')"},
+                                "size": {"type": "number", "description": "Marker size (default: 80)"}
+                            },
+                            "required": ["position"]
+                        }
+                    }
                 }
             },
             "output_path": {
@@ -75,6 +90,11 @@ Returns PNG image (base64 or saved to file).
                 "enum": ["png", "pdf", "svg"],
                 "description": "Output format. Default: png",
                 "default": "png"
+            },
+            "debug": {
+                "type": "boolean",
+                "description": "Include Python tracebacks in error responses. Default: false",
+                "default": False
             }
         },
         "required": ["solution_id", "plot_type"]
@@ -632,6 +652,29 @@ def _plot_slice(data, options, ax, plane: str):
     ax.set_title(f"{quantity.replace('_', ' ').title()} slice at {fixed_label}={slice_pos:.3f} (α={alpha_str})", fontsize=12)
 
 
+def _draw_markers(ax, options):
+    """Draw optional markers on the plot axes."""
+    markers = options.get("markers")
+    if not markers:
+        return
+
+    for m in markers:
+        pos = m["position"]
+        if len(pos) < 2:
+            continue
+        color = m.get("color", "red")
+        marker = m.get("marker", "x")
+        size = m.get("size", 80)
+        label = m.get("label")
+
+        ax.scatter(pos[0], pos[1], c=color, marker=marker, s=size,
+                   zorder=10, edgecolors="white", linewidths=0.5)
+        if label:
+            ax.annotate(label, (pos[0], pos[1]),
+                        textcoords="offset points", xytext=(6, 6),
+                        fontsize=8, color=color, zorder=10)
+
+
 async def handle(arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
     """Handle plot tool calls."""
     import matplotlib
@@ -716,6 +759,9 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
                 }
             }, indent=2))]
 
+        # Draw optional markers
+        _draw_markers(ax, options)
+
         # Apply custom title if provided
         if options.get("title"):
             ax.set_title(options["title"], fontsize=12)
@@ -748,11 +794,13 @@ async def handle(arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
             ]
 
     except Exception as e:
-        import traceback
-        return [TextContent(type="text", text=json.dumps({
+        error = {
             "error": {
                 "code": "PLOT_ERROR",
                 "message": str(e),
-                "traceback": traceback.format_exc()
             }
-        }, indent=2))]
+        }
+        if arguments.get("debug", False):
+            import traceback
+            error["error"]["traceback"] = traceback.format_exc()
+        return [TextContent(type="text", text=json.dumps(error, indent=2))]

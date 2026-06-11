@@ -18,6 +18,7 @@ def get_tool_modules():
 
     tools_dir = Path(__file__).parent.parent / "tools"
     tools = []
+    failures = []
 
     for py_file in sorted(tools_dir.glob("*.py")):
         if py_file.name.startswith("_"):
@@ -34,7 +35,15 @@ def get_tool_modules():
                     tools.append((py_file.stem, attr))
 
         except Exception as e:
-            print(f"Warning: Could not load {module_name}: {e}", file=sys.stderr)
+            failures.append((module_name, e))
+            print(f"Error: Could not load {module_name}: {e}", file=sys.stderr)
+
+    if failures:
+        failed = ", ".join(name for name, _ in failures)
+        raise RuntimeError(f"Failed to load MCP tool modules: {failed}")
+
+    if not tools:
+        raise RuntimeError("No MCP tools found; refusing to generate empty documentation")
 
     # Sort by tool name for consistent ordering
     tools.sort(key=lambda x: x[1].name)
