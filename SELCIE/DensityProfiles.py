@@ -100,7 +100,8 @@ class DensityProfile(d.UserExpression):
     def value_shape(self):
         return ()
 
-    def assign_boundary_labels(self, boundary_definitions):
+    def assign_boundary_labels(self, boundary_definitions,
+                               check_midpoint=True):
         '''
         Relabels boundary of mesh according to functions contained within
         'boundary_definitions'. The first element will correspond to boundary
@@ -114,6 +115,13 @@ class DensityProfile(d.UserExpression):
             of the mesh into different regions. Each function must take input
             argument x, where x is a coordinate, and return True if x is on
             the region of the boundary you wish to label and False if not.
+        check_midpoint : bool, optional
+            Passed to dolfin SubDomain.mark(). If True (dolfin default) a
+            facet is only marked when its midpoint also satisfies the
+            definition. For curved boundaries defined by a tight tolerance on
+            the vertex positions (e.g. a circle), chord midpoints sag inward
+            and coarse facets fail the test, so set False to mark facets from
+            their vertices alone. The default is True.
 
         Returns
         -------
@@ -129,6 +137,7 @@ class DensityProfile(d.UserExpression):
 
         # Assign boundary regions.
         for i, func in enumerate(boundary_definitions):
-            create_boundary_class(func)().mark(self.boundary, i+1)
+            create_boundary_class(func)().mark(self.boundary, i+1,
+                                               check_midpoint)
 
         return None

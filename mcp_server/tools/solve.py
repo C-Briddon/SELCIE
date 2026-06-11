@@ -33,7 +33,8 @@ Parameters:
 - tol: Convergence tolerance (default: 1e-14)
 - max_iter: Maximum iterations (default: 100)
 - relaxation: Relaxation factor for Picard iteration (0-1]. In tests 1 performs well, and is faster, so is recommeneded. Default: 1.0
-- initial_guess: "constant" (default, recommended for SELCIE), "adiabatic" (start from φ = ρ̂^{-1/(n+1)}; good for smooth density profiles, can diverge for discontinuous region densities), or "previous" (start from an earlier solution on the same mesh; see initial_guess_solution_id)
+- initial_guess: "constant" (default, recommended for SELCIE), "adiabatic" (start from φ = ρ̂^{-1/(n+1)}; good for smooth density profiles, can diverge for discontinuous region densities), "previous" (start from an earlier solution on the same mesh; see initial_guess_solution_id), or "boundary" (uniform at the dirichlet_bc value; good warm start for weakly-perturbed/unscreened solves)
+- dirichlet_bc: optional φ̂ value pinned on the outer domain boundary (radial geometries only). Without it the solve uses natural (no-flux) BCs everywhere and the field level floats to the box-average equilibrium ⟨φ̂^{-(n+1)}⟩ = ⟨ρ̂⟩, which depends on domain size. The symmetry axis always keeps the natural condition.
 """,
     inputSchema={
         "type": "object",
@@ -73,9 +74,13 @@ Parameters:
             },
             "initial_guess": {
                 "type": "string",
-                "enum": ["constant", "adiabatic", "previous"],
-                "description": "Initial guess strategy. 'constant' starts from the minimum field value (recommended for SELCIE). 'adiabatic' starts from φ = ρ̂^{-1/(n+1)} per region; converges faster for smooth density profiles (e.g. NFW) but can diverge when region densities are discontinuous. 'previous' starts from an earlier solution on the same mesh (see initial_guess_solution_id). Default: constant",
+                "enum": ["constant", "adiabatic", "previous", "boundary"],
+                "description": "Initial guess strategy. 'constant' starts from the minimum field value (recommended for SELCIE). 'adiabatic' starts from φ = ρ̂^{-1/(n+1)} per region; converges faster for smooth density profiles (e.g. NFW) but can diverge when region densities are discontinuous. 'previous' starts from an earlier solution on the same mesh (see initial_guess_solution_id). 'boundary' starts uniformly at the dirichlet_bc value (requires dirichlet_bc; good for unscreened/weakly-perturbed solves). Default: constant, or boundary when dirichlet_bc is set (the constant start diverges against a pinned boundary).",
                 "default": "constant"
+            },
+            "dirichlet_bc": {
+                "type": "number",
+                "description": "Optional Dirichlet boundary value φ̂ (> 0) pinned on the outer domain boundary. Supported for geometries with a circular outer boundary (domain_radius param). The symmetry axis keeps the natural (no-flux) condition. Default: none (natural BCs; field level floats with domain size). For strongly screened/low-α regimes, the robust recipe is: first solve WITHOUT dirichlet_bc (natural BCs; the floating level acts as a free continuation), then re-solve with dirichlet_bc + initial_guess='previous' — pinning the boundary directly from a cold start can diverge."
             },
             "initial_guess_solution_id": {
                 "type": "string",
@@ -176,7 +181,13 @@ async def handle(arguments: dict) -> list[TextContent]:
     tol = arguments.get("tol", 1e-14)
     max_iter = arguments.get("max_iter", 100)
     relaxation = arguments.get("relaxation", 1.0)
-    initial_guess = arguments.get("initial_guess", "constant")
+    initial_guess = arguments.get("initial_guess")
+    dirichlet_bc = arguments.get("dirichlet_bc")
+    if initial_guess is None:
+        # the constant (minimum-value) start diverges against a pinned
+        # boundary far above the minimum, so Dirichlet solves default to
+        # the boundary-value start instead
+        initial_guess = "boundary" if dirichlet_bc is not None else "constant"
     custom_id = arguments.get("custom_id")
     deg_V = arguments.get("deg_V", 2)
     # MCP cannot have print values, this is for debugging only
@@ -217,6 +228,41 @@ async def handle(arguments: dict) -> list[TextContent]:
     mesh_geometry = mesh_info.geometry
     regions = mesh_info.regions
     n_cells = mesh_info.n_cells
+
+    # Validate Dirichlet BC request (outer boundary identified by domain_radius)
+    bc_outer_radius = None
+    if dirichlet_bc is not None:
+        if not (isinstance(dirichlet_bc, (int, float)) and dirichlet_bc > 0):
+            return [TextContent(
+                type="text",
+                text=json.dumps({
+                    "error": {
+                        "code": "INVALID_PARAMETER",
+                        "message": "dirichlet_bc must be a positive number (chameleon field φ̂ > 0).",
+                    }
+                }, indent=2)
+            )]
+        bc_outer_radius = (mesh_info.params or {}).get("domain_radius")
+        if bc_outer_radius is None:
+            return [TextContent(
+                type="text",
+                text=json.dumps({
+                    "error": {
+                        "code": "DIRICHLET_UNSUPPORTED",
+                        "message": f"dirichlet_bc requires a geometry with a circular outer boundary (domain_radius param); geometry '{mesh_geometry}' has none.",
+                    }
+                }, indent=2)
+            )]
+    if initial_guess == "boundary" and dirichlet_bc is None:
+        return [TextContent(
+            type="text",
+            text=json.dumps({
+                "error": {
+                    "code": "INVALID_PARAMETER",
+                    "message": "initial_guess='boundary' requires dirichlet_bc to be set.",
+                }
+            }, indent=2)
+        )]
 
     # Warn about large meshes
     large_mesh_warning = None
@@ -392,6 +438,35 @@ async def handle(arguments: dict) -> list[TextContent]:
             path=parent_dir
         )
 
+        # Dirichlet BC on the outer boundary: label it 1 (axis/rest stays 0,
+        # keeping the natural condition there). Facets are marked from their
+        # vertices alone (check_midpoint=False): mesh vertices sit on the
+        # circle to float precision, while chord midpoints sag inward and
+        # would silently fail the radius test on coarse meshes. Axis facets
+        # always have an interior vertex that fails the test.
+        BCs = None
+        if dirichlet_bc is not None:
+            bc_r_cut = (1.0 - 1e-4) * float(bc_outer_radius)
+
+            def _outer_boundary(x, _r=bc_r_cut):
+                return float(np.linalg.norm(x)) >= _r
+
+            density_profile.assign_boundary_labels([_outer_boundary],
+                                                   check_midpoint=False)
+            n_bc_facets = int(np.sum(
+                density_profile.boundary.array() == 1))
+            if n_bc_facets == 0:
+                return [TextContent(
+                    type="text",
+                    text=json.dumps({
+                        "error": {
+                            "code": "DIRICHLET_NOT_APPLIED",
+                            "message": "No outer-boundary facets were labeled for the Dirichlet BC; the solve would silently run with natural BCs. Check the mesh geometry (domain_radius) or report this as a bug.",
+                        }
+                    }, indent=2)
+                )]
+            BCs = [None, ("Dirichlet", repr(float(dirichlet_bc)))]
+
         # Handle initial guess
         # FieldSolver wraps initial_field_profiles (one function per
         # subdomain, ordered by marker) in SELCIE's InitialiseField
@@ -401,6 +476,11 @@ async def handle(arguments: dict) -> list[TextContent]:
             def make_adiabatic(f, n_val):
                 return lambda x: pow(max(f(x), 1e-30), -1.0 / (n_val + 1))
             initial_field_profiles = [make_adiabatic(func, n) for func in profiles]
+        elif initial_guess == "boundary":
+            bc_val = float(dirichlet_bc)
+            initial_field_profiles = [
+                (lambda x, _v=bc_val: _v) for _ in profiles
+            ]
 
         # Create solver
         solver = FieldSolver(
@@ -416,11 +496,26 @@ async def handle(arguments: dict) -> list[TextContent]:
             with d.HDF5File(solver.mesh.mpi_comm(), prev_field_path, "r") as f:
                 f.read(solver.field, "field")
 
+        # Project density to DG0 before solving (stats, saving, and the
+        # maximum-principle bound check on the solved field)
+        density_func = None
+        density_min = None
+        density_max = None
+        try:
+            V_dg = d.FunctionSpace(solver.mesh, "DG", 0)
+            density_func = d.Function(V_dg)
+            density_func.interpolate(density_profile)
+            density_min = float(density_func.vector().min())
+            density_max = float(density_func.vector().max())
+        except Exception:
+            pass  # Density interpolation can fail in some edge cases
+
         # Run solver (picard iteration with optimized linear solver)
         # Use optimized linear solver for larger meshes, default for smaller
         if n_cells > 10000:
             picard_result = solver.picard(
                 display_progress=display_progress,
+                BCs=BCs,
                 tol_du=tol,
                 relaxation_parameter=relaxation,
                 maxiter=max_iter,
@@ -431,6 +526,7 @@ async def handle(arguments: dict) -> list[TextContent]:
         else:
             picard_result = solver.picard(
                 display_progress=display_progress,
+                BCs=BCs,
                 tol_du=tol,
                 relaxation_parameter=relaxation,
                 maxiter=max_iter,
@@ -447,6 +543,23 @@ async def handle(arguments: dict) -> list[TextContent]:
         field_min = float(field_vector.min())
         field_max = float(field_vector.max())
         field_mean = float(np.mean(field_vector.get_local()))
+
+        # Physicality guards (a "converged" status does not guarantee a
+        # physical solution; the chameleon field must be positive and is
+        # bounded above by the background equilibrium)
+        solution_warnings = []
+        if math.isfinite(field_min) and field_min <= 0:
+            solution_warnings.append(
+                "Field has non-positive values - unphysical for the chameleon (phi must be > 0). Treat this solution as invalid. Robust recipe for screened regimes: solve WITHOUT dirichlet_bc first (natural BCs), then re-solve with dirichlet_bc + initial_guess='previous'.")
+        bound_candidates = []
+        if dirichlet_bc is not None:
+            bound_candidates.append(float(dirichlet_bc))
+        if density_min is not None and density_min > 0:
+            bound_candidates.append(density_min ** (-1.0 / (n + 1)))
+        if bound_candidates and math.isfinite(field_max) and \
+                field_max > 1.5 * max(bound_candidates):
+            solution_warnings.append(
+                f"Field maximum ({field_max:.3e}) exceeds the maximum-principle bound (~{max(bound_candidates):.3e}) - likely a runaway iteration; treat as unphysical.")
 
         # Calculate PDE strong residual (how well the field satisfies the equation)
         # This is different from du_norm but useful for solution quality assessment
@@ -506,28 +619,15 @@ async def handle(arguments: dict) -> list[TextContent]:
             with d.HDF5File(solver.mesh.mpi_comm(), os.path.join(solution_path, "field_grad_mag.h5"), "w") as f:
                 f.write(solver.field_grad_mag, "field_grad_mag")
 
-        # Project and save density field
+        # Save the density field projected before the solve
         density_saved = False
-        density_min = None
-        density_max = None
-        try:
-            # Create DG0 space for piecewise constant density (matches region-based definition)
-            V_dg = d.FunctionSpace(solver.mesh, "DG", 0)
-            density_func = d.Function(V_dg)
-
-            # Interpolate density_profile (UserExpression) onto DG0 space
-            density_func.interpolate(density_profile)
-
-            # Get density statistics
-            density_min = float(density_func.vector().min())
-            density_max = float(density_func.vector().max())
-
-            # Save to HDF5
-            with d.HDF5File(solver.mesh.mpi_comm(), os.path.join(solution_path, "density.h5"), "w") as f:
-                f.write(density_func, "density")
-            density_saved = True
-        except Exception:
-            pass  # Density interpolation can fail in some edge cases
+        if density_func is not None:
+            try:
+                with d.HDF5File(solver.mesh.mpi_comm(), os.path.join(solution_path, "density.h5"), "w") as f:
+                    f.write(density_func, "density")
+                density_saved = True
+            except Exception:
+                pass  # Saving can fail in some edge cases
 
         # Store solution info
         solution_info = SolutionInfo(
@@ -566,6 +666,8 @@ async def handle(arguments: dict) -> list[TextContent]:
             "method_used": "picard",
             "relaxation_used": relaxation,
             "initial_guess": initial_guess,
+            "dirichlet_bc": dirichlet_bc,
+            "warnings": solution_warnings or None,
             "initial_guess_solution_id": prev_solution_info.solution_id if prev_solution_info else None,
             "field_stats": {
                 "min": _finite_or_none(field_min),

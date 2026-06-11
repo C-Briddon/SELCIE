@@ -292,6 +292,158 @@ class TestDensityFunctions:
         assert abs(result - 0.3) < 1e-10
 
 
+class TestSolveDirichletBC:
+    """Test the dirichlet_bc outer-boundary condition."""
+
+    UNSCREENED = {"object": 10.0, "vacuum": 1.0}
+    SCREENED = {"object": 1e6, "vacuum": 1.0}
+
+    @pytest.fixture(autouse=True)
+    def reset(self):
+        """Reset session before each test."""
+        reset_session()
+
+    async def _make_mesh(self, quality="very_coarse", geometry="sphere_in_vacuum"):
+        from tools.create_mesh import handle as create_mesh
+
+        params = {"object_radius": 0.15, "domain_radius": 1.0}
+        if geometry == "box_2d":
+            params = {"domain_width": 1.0, "domain_height": 1.0}
+        result = await create_mesh({
+            "geometry": geometry,
+            "params": params,
+            "mesh_quality": quality,
+        })
+        return json.loads(result[0].text)["mesh_id"]
+
+    async def _boundary_field(self, solution_id):
+        from tools.evaluate import handle as evaluate
+
+        result = await evaluate({
+            "solution_id": solution_id,
+            "mode": "points",
+            "params": {"coordinates": [[0.0, 0.999]]},
+            "quantities": ["field"],
+        })
+        return json.loads(result[0].text)["data"]["field"][0]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("quality", ["very_coarse", "medium"])
+    async def test_unscreened_pin_attained(self, quality):
+        """The pinned value must be attained at the outer boundary.
+
+        Covers both mesh qualities: coarse meshes regress the
+        check_midpoint=False facet labeling (chord midpoints sag inside
+        the radius tolerance and previously left the BC silently unapplied).
+        """
+        from tools.solve import handle
+
+        mesh_id = await self._make_mesh(quality)
+        result = await handle({
+            "mesh_id": mesh_id,
+            "alpha": 1.0,
+            "density": dict(self.UNSCREENED),
+            "dirichlet_bc": 0.5,
+        })
+        data = json.loads(result[0].text)
+        if "error" in data and data.get("status") == "failed":
+            pytest.fail(f"Solve failed: {data}")
+
+        assert data["status"] == "converged"
+        assert data["initial_guess"] == "boundary"  # default switches with BC
+        assert data["dirichlet_bc"] == 0.5
+        assert data["warnings"] is None
+        # Natural-BC equilibrium is ~1; the pin must hold the boundary at 0.5
+        assert abs(await self._boundary_field(data["solution_id"]) - 0.5) < 0.01
+
+    @pytest.mark.asyncio
+    async def test_screened_cold_start_warns_unphysical(self):
+        """A screened cold start lands on the negative branch and must warn."""
+        from tools.solve import handle
+
+        mesh_id = await self._make_mesh()
+        result = await handle({
+            "mesh_id": mesh_id,
+            "alpha": 0.1,
+            "density": dict(self.SCREENED),
+            "dirichlet_bc": 1.0,
+        })
+        data = json.loads(result[0].text)
+
+        if data.get("status") != "converged" or data["field_stats"]["min"] > 0:
+            pytest.skip("Negative-branch scenario not reproduced on this mesh")
+        assert any("unphysical" in w for w in data["warnings"])
+        assert any("initial_guess='previous'" in w for w in data["warnings"])
+
+    @pytest.mark.asyncio
+    async def test_screened_two_step_recipe(self):
+        """Natural solve then re-solve with the BC stays on the physical branch."""
+        from tools.solve import handle
+
+        mesh_id = await self._make_mesh()
+        base = {"mesh_id": mesh_id, "alpha": 0.1, "density": dict(self.SCREENED)}
+
+        natural = json.loads((await handle(base))[0].text)
+        assert natural["status"] == "converged"
+
+        pinned = json.loads((await handle({
+            **base,
+            "dirichlet_bc": 1.0,
+            "initial_guess": "previous",
+        }))[0].text)
+
+        assert pinned["status"] == "converged"
+        assert pinned["initial_guess_solution_id"] == natural["solution_id"]
+        assert pinned["warnings"] is None
+        assert pinned["field_stats"]["min"] > 0
+        assert abs(await self._boundary_field(pinned["solution_id"]) - 1.0) < 0.01
+
+    @pytest.mark.asyncio
+    async def test_geometry_without_domain_radius_rejected(self):
+        """Geometries with no circular outer boundary must be rejected."""
+        from tools.solve import handle
+
+        mesh_id = await self._make_mesh(geometry="box_2d")
+        result = await handle({
+            "mesh_id": mesh_id,
+            "alpha": 1.0,
+            "density": {"domain": 1.0},
+            "dirichlet_bc": 1.0,
+        })
+        data = json.loads(result[0].text)
+        assert data["error"]["code"] == "DIRICHLET_UNSUPPORTED"
+
+    @pytest.mark.asyncio
+    async def test_non_positive_bc_rejected(self):
+        """dirichlet_bc must be a positive number."""
+        from tools.solve import handle
+
+        mesh_id = await self._make_mesh()
+        result = await handle({
+            "mesh_id": mesh_id,
+            "alpha": 1.0,
+            "density": dict(self.UNSCREENED),
+            "dirichlet_bc": -1.0,
+        })
+        data = json.loads(result[0].text)
+        assert data["error"]["code"] == "INVALID_PARAMETER"
+
+    @pytest.mark.asyncio
+    async def test_boundary_guess_requires_bc(self):
+        """initial_guess='boundary' without dirichlet_bc must error."""
+        from tools.solve import handle
+
+        mesh_id = await self._make_mesh()
+        result = await handle({
+            "mesh_id": mesh_id,
+            "alpha": 1.0,
+            "density": dict(self.UNSCREENED),
+            "initial_guess": "boundary",
+        })
+        data = json.loads(result[0].text)
+        assert data["error"]["code"] == "INVALID_PARAMETER"
+
+
 class TestSolveInitialGuess:
     """Test initial_guess strategies."""
 

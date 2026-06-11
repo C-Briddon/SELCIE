@@ -2,7 +2,7 @@
 
 Auto-generated documentation for all available tools.
 
-_Generated: 2026-06-11 11:49_
+_Generated: 2026-06-11 23:06_
 
 ---
 
@@ -331,7 +331,8 @@ Parameters:
 - tol: Convergence tolerance (default: 1e-14)
 - max_iter: Maximum iterations (default: 100)
 - relaxation: Relaxation factor for Picard iteration (0-1]. In tests 1 performs well, and is faster, so is recommeneded. Default: 1.0
-- initial_guess: "constant" (default, recommended for SELCIE), "adiabatic" (start from φ = ρ̂^{-1/(n+1)}; good for smooth density profiles, can diverge for discontinuous region densities), or "previous" (start from an earlier solution on the same mesh; see initial_guess_solution_id)
+- initial_guess: "constant" (default, recommended for SELCIE), "adiabatic" (start from φ = ρ̂^{-1/(n+1)}; good for smooth density profiles, can diverge for discontinuous region densities), "previous" (start from an earlier solution on the same mesh; see initial_guess_solution_id), or "boundary" (uniform at the dirichlet_bc value; good warm start for weakly-perturbed/unscreened solves)
+- dirichlet_bc: optional φ̂ value pinned on the outer domain boundary (radial geometries only). Without it the solve uses natural (no-flux) BCs everywhere and the field level floats to the box-average equilibrium ⟨φ̂^{-(n+1)}⟩ = ⟨ρ̂⟩, which depends on domain size. The symmetry axis always keeps the natural condition.
 
 ### Parameters
 
@@ -344,7 +345,8 @@ Parameters:
 | `tol` | number | No | Convergence tolerance. Default: 1e-14 Default: `1e-14` |
 | `max_iter` | integer | No | Maximum iterations. Default: 100 Default: `100` |
 | `relaxation` | number | No | Relaxation factor for Picard iteration (0-1]. In tests 1 performs well, and is faster, so is recommeneded. Default: 1.0 Default: `1.0` |
-| `initial_guess` | `constant` | `adiabatic` | `previous` | No | Initial guess strategy. 'constant' starts from the minimum field value (recommended for SELCIE). 'adiabatic' starts from φ = ρ̂^{-1/(n+1)} per region; converges faster for smooth density profiles (e.g. NFW) but can diverge when region densities are discontinuous. 'previous' starts from an earlier solution on the same mesh (see initial_guess_solution_id). Default: constant Default: `"constant"` |
+| `initial_guess` | `constant` | `adiabatic` | `previous` | `boundary` | No | Initial guess strategy. 'constant' starts from the minimum field value (recommended for SELCIE). 'adiabatic' starts from φ = ρ̂^{-1/(n+1)} per region; converges faster for smooth density profiles (e.g. NFW) but can diverge when region densities are discontinuous. 'previous' starts from an earlier solution on the same mesh (see initial_guess_solution_id). 'boundary' starts uniformly at the dirichlet_bc value (requires dirichlet_bc; good for unscreened/weakly-perturbed solves). Default: constant, or boundary when dirichlet_bc is set (the constant start diverges against a pinned boundary). Default: `"constant"` |
+| `dirichlet_bc` | number | No | Optional Dirichlet boundary value φ̂ (> 0) pinned on the outer domain boundary. Supported for geometries with a circular outer boundary (domain_radius param). The symmetry axis keeps the natural (no-flux) condition. Default: none (natural BCs; field level floats with domain size). For strongly screened/low-α regimes, the robust recipe is: first solve WITHOUT dirichlet_bc (natural BCs; the floating level acts as a free continuation), then re-solve with dirichlet_bc + initial_guess='previous' — pinning the boundary directly from a cold start can diverge. |
 | `initial_guess_solution_id` | string | No | Solution ID to start from when initial_guess='previous'. Must be a solution on the same mesh with the same deg_V. Default: most recent solution on this mesh. |
 | `custom_id` | string | No | Custom solution ID. Default: auto-generated |
 | `deg_V` | integer | No | Function space degree (1=CG1, 2=CG2). Default: 2 Default: `2` |
